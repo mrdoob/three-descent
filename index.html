@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Descent</title>
+	<style>
+		body {
+			margin: 0;
+			background: #000;
+			overflow: hidden;
+			color: #0f0;
+			font-family: monospace;
+		}
+		#status {
+			position: fixed;
+			top: 16px;
+			left: 50%;
+			transform: translateX(-50%);
+			font-size: 12px;
+			z-index: 50;
+		}
+		@keyframes blink {
+			0%, 100% { opacity: 1; }
+			50% { opacity: 0.3; }
+		}
+	</style>
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://raw.githack.com/mrdoob/three.js/dev/build/three.module.js",
+				"three/addons/": "https://raw.githack.com/mrdoob/three.js/dev/examples/jsm/"
+			}
+		}
+	</script>
+</head>
+<body>
+	<div id="status"></div>
+	<script type="module" src="js/main.js"></script>
+</body>
+</html>
