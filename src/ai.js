@@ -1996,6 +1996,40 @@ function do_ai_for_robot( robot, playerPos, robotIndex ) {
 
 	}
 
+	// Dead player corpse search: nearby robots probabilistically create paths toward dead player
+	// Ported from: AI.C lines 2936-2949
+	const playerDead = _getPlayerDead !== null ? _getPlayerDead() : false;
+
+	if ( playerDead === true && ailp.player_awareness_type === 0 ) {
+
+		if ( dist < 200.0 && Math.random() < _dt * 0.125 ) {
+
+			if ( ailp.behavior !== AIB_STILL && ailp.behavior !== AIB_RUN_FROM ) {
+
+				// Don't interrupt an active path that's still being followed
+				if ( ailp.mode !== AIM_FOLLOW_PATH || ailp.cur_path_index >= ailp.path_length - 1 ) {
+
+					if ( dist < 30.0 ) {
+
+						create_n_segment_path( robot, 5, - 1, canOpenDoors );
+
+					} else {
+
+						const playerSeg = _getPlayerSeg !== null ? _getPlayerSeg() : - 1;
+						create_path_to_player( robot, obj.segnum, playerSeg, canOpenDoors, 20 );
+
+					}
+
+					ailp.mode = AIM_FOLLOW_PATH;
+
+				}
+
+			}
+
+		}
+
+	}
+
 	// Mode transitions
 	if ( ailp.player_awareness_type > 0 && ailp.mode === AIM_STILL ) {
 

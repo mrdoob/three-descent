@@ -2,7 +2,7 @@
 // Collision detection and response
 
 import { Segments, Walls, Num_segments, GameTime } from './mglobal.js';
-import { TmapInfos, Powerup_info, N_powerup_types } from './bm.js';
+import { TmapInfos, TMI_VOLATILE, Powerup_info, N_powerup_types } from './bm.js';
 import { Robot_info, N_robot_types, Weapon_info, N_weapon_types } from './bm.js';
 import { get_side_dist } from './gameseg.js';
 import { wall_damage, wall_open_door, WALL_BLASTABLE, WALL_DOOR } from './wall.js';
