@@ -220,10 +220,31 @@ let muzzleFlashTimer = 0;
 export function game_init() {
 
 	// Renderer
+	const GAME_ASPECT = 320 / 200;
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+	let w, h;
+
+	if ( vw / vh > GAME_ASPECT ) {
+
+		h = vh;
+		w = Math.floor( vh * GAME_ASPECT );
+
+	} else {
+
+		w = vw;
+		h = Math.floor( vw / GAME_ASPECT );
+
+	}
+
 	renderer = new THREE.WebGLRenderer( { antialias: true } );
-	renderer.setSize( window.innerWidth, window.innerHeight );
+	renderer.setSize( w, h );
 	renderer.setPixelRatio( window.devicePixelRatio );
 	renderer.setClearColor( 0x000000 );
+	renderer.domElement.style.position = 'absolute';
+	renderer.domElement.style.left = '50%';
+	renderer.domElement.style.top = '50%';
+	renderer.domElement.style.transform = 'translate(-50%, -50%)';
 	document.body.appendChild( renderer.domElement );
 
 	// Scene
@@ -232,7 +253,7 @@ export function game_init() {
 	// Camera
 	camera = new THREE.PerspectiveCamera(
 		90,
-		window.innerWidth / window.innerHeight,
+		GAME_ASPECT,
 		0.1,
 		10000
 	);

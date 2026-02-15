@@ -136,13 +136,32 @@ function onMouseUp( e ) {
 
 }
 
+const GAME_ASPECT = 320 / 200;
+
 function onResize() {
 
 	if ( _camera === null || _renderer === null ) return;
 
-	_camera.aspect = window.innerWidth / window.innerHeight;
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+
+	let w, h;
+
+	if ( vw / vh > GAME_ASPECT ) {
+
+		h = vh;
+		w = Math.floor( vh * GAME_ASPECT );
+
+	} else {
+
+		w = vw;
+		h = Math.floor( vw / GAME_ASPECT );
+
+	}
+
+	_camera.aspect = GAME_ASPECT;
 	_camera.updateProjectionMatrix();
-	_renderer.setSize( window.innerWidth, window.innerHeight );
+	_renderer.setSize( w, h );
 
 }
 
