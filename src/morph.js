@@ -48,10 +48,12 @@ export function do_morph_frame( liveRobots, dt ) {
 		robot.mesh.scale.set( scale, scale, scale );
 
 		// Spin rotation during morph (from MORPH.C: morph_rotvel = {0x4000, 0x2000, 0x1000})
-		// 0x4000/F1_0 = 0.25 rev/frame → ~2.5 rad/s at 30fps
-		robot.mesh.rotation.x += 2.5 * dt;
-		robot.mesh.rotation.y += 1.25 * dt;
-		robot.mesh.rotation.z += 0.625 * dt;
+		// These are fixang/second: 0x4000/0x10000 = 0.25 rev/s = π/2 rad/s
+		// 0x2000/0x10000 = 0.125 rev/s = π/4 rad/s
+		// 0x1000/0x10000 = 0.0625 rev/s = π/8 rad/s
+		robot.mesh.rotation.x += 1.5708 * dt;
+		robot.mesh.rotation.y += 0.7854 * dt;
+		robot.mesh.rotation.z += 0.3927 * dt;
 
 	}
 
