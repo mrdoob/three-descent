@@ -172,6 +172,23 @@ export const KEY_ICON_BLUE = 68;
 export const KEY_ICON_YELLOW = 69;
 export const KEY_ICON_RED = 70;
 
+// Object type classification constants (from BM.H)
+// Ported from: descent-master/MAIN/BM.H lines 267-273
+export const OL_ROBOT = 1;
+export const OL_CONTROL_CENTER = 4;
+export const OL_PLAYER = 5;
+export const OL_CLUTTER = 6;
+export const OL_EXIT = 7;
+
+// Object type tables — populated from $ROBOT/$OBJECT/$POWERUP/$HOSTAGE in bitmaps.bin
+// Ported from: descent-master/MAIN/BM.H lines 278-280
+export const MAX_OBJTYPE = 100;
+export const ObjType = new Uint8Array( MAX_OBJTYPE );	// OL_ROBOT, OL_CONTROL_CENTER, etc.
+export const ObjId = new Uint8Array( MAX_OBJTYPE );		// model_num for polyobj types
+export const ObjStrength = new Float32Array( MAX_OBJTYPE );	// strength (fixed-point converted to float)
+export let Num_total_object_types = 0;
+export function set_Num_total_object_types( n ) { Num_total_object_types = n; }
+
 export class TmapInfo {
 
 	constructor() {

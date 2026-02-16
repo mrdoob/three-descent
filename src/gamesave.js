@@ -2,12 +2,13 @@
 // Functions for loading game data (objects, walls, triggers, etc.) from level files
 
 import { read_object, objectTypeName, OBJ_PLAYER, OBJ_NONE, OBJ_ROBOT, OBJ_HOSTAGE,
-	OBJ_WEAPON, OBJ_POWERUP, OBJ_CNTRLCEN, MT_PHYSICS, RT_POLYOBJ, CT_POWERUP,
+	OBJ_WEAPON, OBJ_POWERUP, OBJ_CNTRLCEN, MT_PHYSICS, RT_POLYOBJ, CT_POWERUP, CT_CNTRLCEN,
 	Objects, obj_link, reset_objects } from './object.js';
 import { read_wall } from './wall.js';
 import { Walls, set_Num_walls } from './mglobal.js';
 import { Triggers, set_Num_triggers, MAX_WALLS_PER_LINK } from './switch.js';
-import { Robot_info, N_robot_types, Powerup_info, N_powerup_types } from './bm.js';
+import { Robot_info, N_robot_types, Powerup_info, N_powerup_types,
+	ObjType, ObjId, ObjStrength, OL_CONTROL_CENTER, Num_total_object_types } from './bm.js';
 import { Polygon_models } from './polyobj.js';
 
 const GAME_FILEINFO_SIGNATURE = 0x6705;
@@ -91,6 +92,32 @@ function verify_object( obj ) {
 	if ( obj.type === OBJ_HOSTAGE ) {
 
 		obj.control_type = CT_POWERUP;
+
+	}
+
+	// Ported from: verify_object() in GAMESAVE.C lines 644-657
+	if ( obj.type === OBJ_CNTRLCEN ) {
+
+		obj.render_type = RT_POLYOBJ;
+		obj.control_type = CT_CNTRLCEN;
+
+		// Make model number correct from ObjType/ObjId table
+		for ( let i = 0; i < Num_total_object_types; i ++ ) {
+
+			if ( ObjType[ i ] === OL_CONTROL_CENTER ) {
+
+				if ( obj.rtype !== null ) {
+
+					obj.rtype.model_num = ObjId[ i ];
+
+				}
+
+				obj.shields = ObjStrength[ i ];
+				break;
+
+			}
+
+		}
 
 	}
 

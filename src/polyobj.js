@@ -853,7 +853,7 @@ export function buildModelMesh( model, pigFile, palette, subobj_flags ) {
 // Each $ROBOT with simple_model loads 2 models (main + simple)
 // $OBJECT with dead_pof loads 2 models
 // $PLAYER_SHIP with simple + dying loads 3 models
-const SHAREWARE_MODEL_TABLE = [
+export const SHAREWARE_MODEL_TABLE = [
 	'robot09.pof',		// 0: Robot 0 main
 	'robot09s.pof',		// 1: Robot 0 simple
 	'robot17.pof',		// 2: Robot 1 main

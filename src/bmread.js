@@ -12,8 +12,13 @@ import {
 	Effects, MAX_EFFECTS, EF_CRITICAL, set_Num_effects,
 	Sounds, cockpit_bitmap, N_COCKPIT_BITMAPS, Gauges, MAX_GAUGE_BMS,
 	TmapInfos, TMI_VOLATILE,
-	Powerup_info, Powerup_names, MAX_POWERUP_TYPES, set_N_powerup_types
+	Powerup_info, Powerup_names, MAX_POWERUP_TYPES, set_N_powerup_types,
+	N_robot_types,
+	ObjType, ObjId, ObjStrength, MAX_OBJTYPE,
+	OL_PLAYER, OL_ROBOT, OL_CONTROL_CENTER, OL_CLUTTER, OL_EXIT,
+	Num_total_object_types, set_Num_total_object_types
 } from './bm.js';
+import { SHAREWARE_MODEL_TABLE } from './polyobj.js';
 
 // Decode XOR/rotate-encrypted bitmaps.bin text
 // Mirrors decode_text_line() in BMREAD.C
@@ -297,15 +302,29 @@ export function bm_build_shareware_texture_table( hogFile, pigFile ) {
 	// Parse sound mapping table from bitmaps.bin
 	bm_parse_shareware_sounds( text, pigFile );
 
+	// Initialize ObjType table — player is always entry 0
+	// Ported from: bm_init_use_tbl() in BMREAD.C lines 397-399
+	ObjType[ 0 ] = OL_PLAYER;
+	ObjId[ 0 ] = 0;
+	set_Num_total_object_types( 1 );
+
 	// Parse robot data from bitmaps.bin
 	bm_parse_shareware_robots( text );
 	bm_parse_shareware_robot_ai( text );
+
+	// Add robot entries to ObjType table
+	// Ported from: bm_read_robot() in BMREAD.C lines 1232-1233, 1264
+	bm_populate_robot_obj_types();
 
 	// Parse weapon data from bitmaps.bin
 	bm_parse_shareware_weapons( text, pigFile, hogFile );
 
 	// Parse powerup data from bitmaps.bin
 	bm_parse_shareware_powerups( text );
+
+	// Parse object data (reactors, exit models, clutter) from bitmaps.bin
+	// Ported from: bm_read_object() in BMREAD.C lines 1268-1359
+	bm_parse_shareware_objects( text );
 
 	// Parse cockpit and gauge bitmap data from bitmaps.bin
 	bm_parse_shareware_cockpit( text, pigFile );
@@ -1004,5 +1023,118 @@ function bm_parse_shareware_powerups( text ) {
 
 	set_N_powerup_types( n );
 	console.log( 'BM: Parsed ' + count + ' powerup types (N_powerup_types=' + n + ')' );
+
+}
+
+// Populate ObjType table entries for robots (after robot parsing)
+// Ported from: bm_read_robot() in BMREAD.C lines 1232-1233, 1264
+function bm_populate_robot_obj_types() {
+
+	let n = Num_total_object_types;
+
+	for ( let i = 0; i < N_robot_types; i ++ ) {
+
+		if ( n >= MAX_OBJTYPE ) break;
+
+		ObjType[ n ] = OL_ROBOT;
+		ObjId[ n ] = i;
+		n ++;
+
+	}
+
+	set_Num_total_object_types( n );
+
+}
+
+// Parse $OBJECT entries from decoded bitmaps.bin text
+// Each entry defines a non-robot polygon object (reactor, exit, clutter)
+// Ported from: bm_read_object() in BMREAD.C lines 1268-1359
+function bm_parse_shareware_objects( text ) {
+
+	// Build POF filename -> model index lookup from SHAREWARE_MODEL_TABLE
+	const pofNameToIndex = new Map();
+	for ( let i = 0; i < SHAREWARE_MODEL_TABLE.length; i ++ ) {
+
+		const name = SHAREWARE_MODEL_TABLE[ i ].toLowerCase();
+		// Only store first occurrence (some models are reused with different indices)
+		if ( pofNameToIndex.has( name ) !== true ) {
+
+			pofNameToIndex.set( name, i );
+
+		}
+
+	}
+
+	let count = 0;
+	let pos = 0;
+
+	while ( pos < text.length ) {
+
+		const idx = text.indexOf( '$OBJECT ', pos );
+		if ( idx === - 1 ) break;
+
+		pos = idx + 8;
+
+		// Find end of this entry (next $ marker or end of text)
+		let entryEnd = text.indexOf( '$', pos );
+		if ( entryEnd === - 1 ) entryEnd = text.length;
+		const entry = text.substring( pos, entryEnd );
+
+		// First token is the model filename (e.g. "reactor.pof")
+		const modelMatch = entry.match( /^(\S+\.pof)/ );
+		if ( modelMatch === null ) continue;
+
+		const modelName = modelMatch[ 1 ].toLowerCase();
+
+		// Look up model index from our model table
+		const modelIndex = pofNameToIndex.get( modelName );
+		if ( modelIndex === undefined ) {
+
+			console.warn( 'BM: $OBJECT model not found: ' + modelName );
+			continue;
+
+		}
+
+		// Parse type= field
+		let type = - 1;
+		const typeMatch = entry.match( /type=(\w+)/ );
+		if ( typeMatch !== null ) {
+
+			const typeStr = typeMatch[ 1 ].toLowerCase();
+			if ( typeStr === 'controlcen' ) type = OL_CONTROL_CENTER;
+			else if ( typeStr === 'clutter' ) type = OL_CLUTTER;
+			else if ( typeStr === 'exit' ) type = OL_EXIT;
+
+		}
+
+		// Parse strength= field (fixed-point float)
+		let strength = 0;
+		const strengthMatch = entry.match( /strength=([\d.]+)/ );
+		if ( strengthMatch !== null ) {
+
+			strength = parseFloat( strengthMatch[ 1 ] );
+
+		}
+
+		// Add to ObjType table
+		const n = Num_total_object_types;
+		if ( n < MAX_OBJTYPE ) {
+
+			ObjType[ n ] = type;
+			ObjId[ n ] = modelIndex;
+			ObjStrength[ n ] = strength;
+			set_Num_total_object_types( n + 1 );
+
+		}
+
+		console.log( 'BM: $OBJECT ' + modelName + ' type=' + type +
+			' model_num=' + modelIndex + ' strength=' + strength.toFixed( 1 ) );
+
+		count ++;
+		pos = entryEnd;
+
+	}
+
+	console.log( 'BM: Parsed ' + count + ' object types (Num_total_object_types=' + Num_total_object_types + ')' );
 
 }
