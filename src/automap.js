@@ -166,6 +166,10 @@ export function automap_enter() {
 	if ( _mineGroup !== null ) _mineGroup.visible = false;
 	if ( _gunGroup !== null ) _gunGroup.visible = false;
 
+	// Add distance-based edge fading for depth perception
+	// Ported from: AUTOMAP.C lines 855-866 (distance fade with gr_fade_table)
+	_scene.fog = new THREE.Fog( 0x000000, 10, _viewDist * 2.5 );
+
 	// Position camera for initial view
 	updateAutomapCamera( 0 );
 
@@ -182,6 +186,9 @@ export function automap_exit() {
 
 	// Clean up automap geometry
 	disposeAutomapGeometry();
+
+	// Remove automap fog
+	_scene.fog = null;
 
 	// Show mine, show gun
 	if ( _mineGroup !== null ) _mineGroup.visible = true;
@@ -273,6 +280,9 @@ export function automap_frame( dt, mouse, wheel, keys, isPointerLocked, fireDown
 	// Clamp zoom
 	if ( _viewDist < ZOOM_MIN_VALUE ) _viewDist = ZOOM_MIN_VALUE;
 	if ( _viewDist > ZOOM_MAX_VALUE ) _viewDist = ZOOM_MAX_VALUE;
+
+	// Update fog distance to match zoom level
+	if ( _scene.fog !== null ) _scene.fog.far = _viewDist * 2.5;
 
 	updateAutomapCamera( dt );
 
