@@ -20,7 +20,7 @@ import { ai_do_frame } from './ai.js';
 import { digi_play_sample, digi_update_listener, SOUND_LASER_FIRED, SOUND_FUSION_WARMUP, SOUND_WEAPON_HIT_BLASTABLE,
 	SOUND_GOOD_SELECTION_PRIMARY, SOUND_GOOD_SELECTION_SECONDARY, SOUND_ALREADY_SELECTED, SOUND_BAD_SELECTION } from './digi.js';
 import { Polygon_models, polyobj_calc_gun_points } from './polyobj.js';
-import { buildAutomapGeometry } from './automap.js';
+import { automap_enter, automap_exit, automap_frame, automap_set_externals, automap_reset, getIsAutomap } from './automap.js';
 import { updateMineVisibility } from './render.js';
 import { controls_init, controls_set_resize_refs, controls_set_key_action_callback,
 	controls_get_keys, controls_consume_mouse, controls_consume_wheel, controls_is_pointer_locked,
@@ -202,14 +202,6 @@ let old_cockpit_mode = CM_FULL_COCKPIT;
 export function getCockpitMode() { return Cockpit_mode; }
 export function isRearView() { return Rear_view; }
 
-// Automap state
-let automapGroup = null;
-let isAutomap = false;
-const _savedCameraPos = new THREE.Vector3();
-const _savedCameraQuat = new THREE.Quaternion();
-let automapZoom = 1.0;		// zoom multiplier for automap camera distance
-let playerMarker = null;	// sprite showing player position on automap
-
 // First-person weapon model
 let gunGroup = null;
 let muzzleFlashLeft = null;
@@ -289,6 +281,9 @@ export function game_init() {
 	controls_init( renderer.domElement );
 	controls_set_resize_refs( camera, renderer );
 	controls_set_key_action_callback( handleKeyAction );
+
+	// Wire up automap externals
+	automap_set_externals( { scene: scene, camera: camera, gunGroup: gunGroup } );
 
 	// Expose for debugging
 	window.__renderer = renderer;
@@ -373,6 +368,9 @@ export function game_set_mine( group ) {
 
 	mineGroup = group;
 	scene.add( mineGroup );
+
+	// Update automap with new mine group reference
+	automap_set_externals( { mineGroup: mineGroup } );
 
 }
 
@@ -503,46 +501,20 @@ function updateCamera( dt ) {
 
 	if ( camera === null ) return;
 
-	// --- Automap camera: free orbit with mouse drag + scroll zoom ---
-	if ( isAutomap === true ) {
+	// --- Automap camera: delegated to automap.js ---
+	if ( getIsAutomap() === true ) {
 
 		const mouse = controls_consume_mouse();
 		const wheel = controls_consume_wheel();
-
-		// Mouse drag rotates the view (orbit around current position)
-		if ( controls_is_pointer_locked() ) {
-
-			camera.rotateY( - mouse.x * 0.003 );
-			camera.rotateX( - mouse.y * 0.003 );
-
-		}
-
-		// Scroll wheel zooms (move forward/backward along view direction)
-		if ( wheel !== 0 ) {
-
-			_forward.set( 0, 0, 1 ).applyQuaternion( camera.quaternion );
-			camera.position.addScaledVector( _forward, wheel * 0.15 );
-
-		}
-
-		// WASD pans the automap camera (reuse pre-allocated vectors — Golden Rule #5)
 		const keys = controls_get_keys();
-		const panSpeed = 80.0 * dt;
+		const fireDown = controls_is_fire_down();
 
-		_forward.set( 0, 0, - 1 ).applyQuaternion( camera.quaternion );
-		_right.set( 1, 0, 0 ).applyQuaternion( camera.quaternion );
-		_up.set( 0, 1, 0 ).applyQuaternion( camera.quaternion );
-
-		if ( keys[ 'KeyW' ] || keys[ 'ArrowUp' ] ) camera.position.addScaledVector( _forward, panSpeed );
-		if ( keys[ 'KeyS' ] || keys[ 'ArrowDown' ] ) camera.position.addScaledVector( _forward, - panSpeed );
-		if ( keys[ 'KeyA' ] || keys[ 'ArrowLeft' ] ) camera.position.addScaledVector( _right, - panSpeed );
-		if ( keys[ 'KeyD' ] || keys[ 'ArrowRight' ] ) camera.position.addScaledVector( _right, panSpeed );
-		if ( keys[ 'Space' ] ) camera.position.addScaledVector( _up, panSpeed );
-		if ( keys[ 'ShiftLeft' ] || keys[ 'ShiftRight' ] ) camera.position.addScaledVector( _up, - panSpeed );
+		automap_frame( dt, mouse, wheel, keys, controls_is_pointer_locked(), fireDown );
 
 		// Extract forward/up for audio listener (keep audio positioned at player)
-		_forward.set( 0, 0, - 1 ).applyQuaternion( _savedCameraQuat );
-		_up.set( 0, 1, 0 ).applyQuaternion( _savedCameraQuat );
+		// Use camera's current orientation (set by automap_frame)
+		_forward.set( 0, 0, - 1 ).applyQuaternion( camera.quaternion );
+		_up.set( 0, 1, 0 ).applyQuaternion( camera.quaternion );
 		return;
 
 	}
@@ -1201,7 +1173,7 @@ function handleKeyAction( e ) {
 
 		e.preventDefault();
 
-		if ( Rear_view !== true && isAutomap !== true ) {
+		if ( Rear_view !== true && getIsAutomap() !== true ) {
 
 			if ( Cockpit_mode === CM_FULL_COCKPIT ) {
 
@@ -1235,7 +1207,7 @@ function handleKeyAction( e ) {
 	// Ported from: GAME.C lines 2517-2558 rear view handling
 	if ( e.code === 'KeyH' ) {
 
-		if ( playerDead !== true && isAutomap !== true ) {
+		if ( playerDead !== true && getIsAutomap() !== true ) {
 
 			if ( Rear_view !== true ) {
 
@@ -1298,29 +1270,14 @@ export function getPlayerPos() {
 
 // --- Automap ---
 
-export function game_set_automap( group ) {
+export function game_set_automap() {
 
 	// Reset automap, pause, and cockpit mode on level change
-	isAutomap = false;
+	automap_reset();
 	isPaused = false;
 	Cockpit_mode = CM_FULL_COCKPIT;
 	Rear_view = false;
 	hidePauseMenu();
-
-	if ( automapGroup !== null && scene !== null ) {
-
-		scene.remove( automapGroup );
-
-	}
-
-	automapGroup = group;
-
-	if ( automapGroup !== null && scene !== null ) {
-
-		automapGroup.visible = false;
-		scene.add( automapGroup );
-
-	}
 
 	// Ensure mine + gun are visible
 	if ( mineGroup !== null ) mineGroup.visible = true;
@@ -1328,7 +1285,7 @@ export function game_set_automap( group ) {
 
 }
 
-export function getIsAutomap() { return isAutomap; }
+export { getIsAutomap };
 
 
 // --- Pause menu canvas rendering ---
@@ -1648,77 +1605,15 @@ export function game_set_load_callback( cb ) {
 
 function toggleAutomap() {
 
-	if ( automapGroup === null ) return;
 	if ( camera === null ) return;
 
-	isAutomap = ! isAutomap;
+	if ( getIsAutomap() !== true ) {
 
-	if ( isAutomap === true ) {
-
-		// Save camera state
-		_savedCameraPos.copy( camera.position );
-		_savedCameraQuat.copy( camera.quaternion );
-
-		// Rebuild automap to show only visited segments
-		// Ported from: AUTOMAP.C — rebuild each toggle to reflect current visited state
-		const oldGroup = automapGroup;
-		automapGroup = buildAutomapGeometry();
-		automapGroup.visible = true;
-		scene.add( automapGroup );
-
-		if ( oldGroup !== null ) {
-
-			scene.remove( oldGroup );
-			oldGroup.traverse( ( child ) => {
-
-				if ( child.geometry !== undefined ) child.geometry.dispose();
-				if ( child.material !== undefined ) child.material.dispose();
-
-			} );
-
-		}
-
-		// Hide textured mine
-		if ( mineGroup !== null ) mineGroup.visible = false;
-
-		// Hide gun model in automap
-		if ( gunGroup !== null ) gunGroup.visible = false;
-
-		// Add player position marker
-		if ( playerMarker === null ) {
-
-			playerMarker = new THREE.Sprite( new THREE.SpriteMaterial( {
-				color: 0x00ff00,
-				depthTest: false
-			} ) );
-
-		}
-
-		playerMarker.position.copy( _savedCameraPos );
-		playerMarker.scale.set( 3, 3, 1 );
-		playerMarker.visible = true;
-		scene.add( playerMarker );
+		automap_enter();
 
 	} else {
 
-		// Restore camera
-		camera.position.copy( _savedCameraPos );
-		camera.quaternion.copy( _savedCameraQuat );
-
-		// Hide automap, show mine
-		automapGroup.visible = false;
-		if ( mineGroup !== null ) mineGroup.visible = true;
-
-		// Show gun model
-		if ( gunGroup !== null ) gunGroup.visible = true;
-
-		// Hide player marker
-		if ( playerMarker !== null ) {
-
-			playerMarker.visible = false;
-			scene.remove( playerMarker );
-
-		}
+		automap_exit();
 
 	}
 
