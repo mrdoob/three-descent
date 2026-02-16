@@ -885,10 +885,13 @@ async function advanceLevel() {
 	Automap_visited.fill( 0 );
 
 	// Reset player state (keep weapons between levels)
-	// Ported from: init_ammo_and_energy() in GAMESEQ.C lines 572-578
+	// Ported from: init_ammo_and_energy() in GAMESEQ.C lines 514-530
 	// Ensure shields and energy are at least starting values
 	if ( playerShields < 100 ) playerShields = 100;
 	if ( playerEnergy < 100 ) playerEnergy = 100;
+	// Ensure minimum concussion missiles for new level
+	const minConcussion = 2 + 5 - Difficulty_level;
+	if ( playerSecondaryAmmo[ 0 ] < minConcussion ) playerSecondaryAmmo[ 0 ] = minConcussion;
 	// Keys are level-specific — clear for new level
 	playerKeys = { blue: false, red: false, gold: false };
 	playerDead = false;
