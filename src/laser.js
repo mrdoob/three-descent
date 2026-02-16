@@ -2,7 +2,7 @@
 // Laser/weapon creation, movement, and collision
 
 import * as THREE from 'three';
-import { GameTime } from './mglobal.js';
+import { GameTime, Segments } from './mglobal.js';
 import { find_point_seg } from './gameseg.js';
 import { find_vector_intersection, HIT_NONE, HIT_WALL } from './fvi.js';
 import { Weapon_info, Vclips, N_weapon_types,
@@ -496,6 +496,7 @@ class WeaponObj {
 		// Proximity bomb state (stuck to wall after first wall hit)
 		// Ported from: LASER.C / PHYSICS.C proximity bomb handling
 		this.stuck = false;
+		this.stuck_wallnum = - 1;	// wall_num this weapon is stuck to (for kill_stuck_objects)
 
 		// Bounce grace period for smart homing children
 		// Ported from: LASER.C lines 278-281 — PF_BOUNCE set at creation,
@@ -1028,6 +1029,7 @@ export function Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segn
 		w.track_goal = - 1;
 		w.last_hitobj = - 1;
 		w.stuck = false;
+		w.stuck_wallnum = - 1;
 
 		// Smart homing children get bounce grace to avoid instant wall collision
 		// Ported from: LASER.C lines 278-281 — PF_BOUNCE set on smart homing children
@@ -1967,6 +1969,19 @@ export function laser_do_weapon_sequence( dt ) {
 			if ( w.weapon_type === PROXIMITY_ID || w.weapon_type === FLARE_ID ) {
 
 				w.stuck = true;
+
+				// Store wall_num for kill_stuck_objects()
+				// Ported from: add_stuck_object() in WALL.C line 989-996
+				if ( fvi_result.hit_side_seg >= 0 && fvi_result.hit_side >= 0 ) {
+
+					const hitSeg = Segments[ fvi_result.hit_side_seg ];
+					if ( hitSeg !== undefined ) {
+
+						w.stuck_wallnum = hitSeg.sides[ fvi_result.hit_side ].wall_num;
+
+					}
+
+				}
 				w.vel_x = 0;
 				w.vel_y = 0;
 				w.vel_z = 0;
@@ -2187,5 +2202,26 @@ export function laser_get_stuck_flares() {
 	}
 
 	return { data: _stuckFlareData, count: _stuckFlareCount };
+
+}
+
+// Kill any weapons stuck to the given wall (called when doors open or walls blast)
+// Ported from: kill_stuck_objects() in WALL.C lines 1028-1048
+export function laser_kill_stuck_on_wall( wallnum ) {
+
+	if ( wallnum === - 1 ) return;
+
+	for ( let i = 0; i < MAX_WEAPONS; i ++ ) {
+
+		const w = weapons[ i ];
+		if ( w.active !== true ) continue;
+		if ( w.stuck !== true ) continue;
+		if ( w.stuck_wallnum !== wallnum ) continue;
+
+		// Set short lifespan so weapon disappears quickly (0.25s like original)
+		w.lifeleft = 0.25;
+		w.stuck_wallnum = - 1;
+
+	}
 
 }

@@ -5,6 +5,7 @@ import {
 	MAX_SIDES_PER_SEGMENT, IS_CHILD
 } from './segment.js';
 import { digi_play_sample_3d } from './digi.js';
+import { laser_kill_stuck_on_wall } from './laser.js';
 
 // Wall types
 export const WALL_NORMAL = 0;
@@ -419,6 +420,12 @@ function do_door_open( door_num ) {
 	for ( let p = 0; p < d.n_parts; p ++ ) {
 
 		const w = _Walls[ d.front_wallnum[ p ] ];
+
+		// Kill any weapons stuck to this door's walls
+		// Ported from: do_door_open() in WALL.C lines 589-590
+		laser_kill_stuck_on_wall( d.front_wallnum[ p ] );
+		laser_kill_stuck_on_wall( d.back_wallnum[ p ] );
+
 		const seg = _Segments[ w.segnum ];
 		const side = w.sidenum;
 		const child_segnum = seg.children[ side ];
@@ -850,6 +857,11 @@ function blast_blastable_wall( segnum, sidenum ) {
 
 	const cseg = _Segments[ child_segnum ];
 	const back_wn = cseg.sides[ connect_side ].wall_num;
+
+	// Kill any weapons stuck to this wall
+	// Ported from: blast_blastable_wall() in WALL.C lines 342-343
+	laser_kill_stuck_on_wall( wall_num );
+	laser_kill_stuck_on_wall( back_wn );
 
 	// Check if this wall clip has WCF_EXPLODES flag
 	// Ported from: blast_blastable_wall() in WALL.C lines 348-356
