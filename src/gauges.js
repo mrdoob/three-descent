@@ -379,10 +379,23 @@ export function gauges_draw( dt ) {
 	ctx.imageSmoothingEnabled = false;
 
 	// Draw cockpit or full-screen mode
-	// Ported from: init_cockpit() / render_gauges() in GAME.C and GAUGES.C
-	if ( _cockpitMode === CM_FULL_COCKPIT || _cockpitMode === CM_REAR_VIEW ) {
+	// Ported from: draw_hud() / render_gauges() in GAME.C and GAUGES.C
+	if ( _cockpitMode === CM_REAR_VIEW ) {
 
-		// Full cockpit or rear view: draw cockpit frame and all gauges
+		// Rear view: draw cockpit background only, no gauges
+		// Ported from: draw_hud() in GAUGES.C lines 2067-2120
+		// Original skips all HUD elements when Rear_view or CM_REAR_VIEW
+		drawCockpitBackground( ctx );
+
+		ctx.fillStyle = '#00ff00';
+		ctx.font = 'bold 10px monospace';
+		ctx.textAlign = 'center';
+		ctx.fillText( 'REAR VIEW', COCKPIT_W / 2, COCKPIT_H - 75 );
+		ctx.textAlign = 'left';
+
+	} else if ( _cockpitMode === CM_FULL_COCKPIT ) {
+
+		// Full cockpit: draw cockpit frame and all gauges
 		drawCockpitBackground( ctx );
 		drawShieldGauge( ctx );
 		drawEnergyBars( ctx );
@@ -393,17 +406,6 @@ export function gauges_draw( dt ) {
 		drawWeaponInfo( ctx, 1 );
 		drawHomingWarning( ctx );
 
-		// Draw "REAR VIEW" label in rear view mode
-		if ( _cockpitMode === CM_REAR_VIEW ) {
-
-			ctx.fillStyle = '#ff0000';
-			ctx.font = 'bold 10px monospace';
-			ctx.textAlign = 'center';
-			ctx.fillText( 'REAR VIEW', COCKPIT_W / 2, 20 );
-			ctx.textAlign = 'left';
-
-		}
-
 	} else {
 
 		// Full screen mode: draw compact text-based HUD info instead of cockpit
@@ -411,19 +413,23 @@ export function gauges_draw( dt ) {
 
 	}
 
-	// Draw reticle at center of game view (not cockpit center)
-	drawReticle( ctx );
+	if ( _cockpitMode !== CM_REAR_VIEW ) {
 
-	// Draw score and lives (top area, above cockpit)
-	drawScoreLives( ctx );
+		// Draw reticle at center of game view (not cockpit center)
+		drawReticle( ctx );
 
-	// Draw cloak/invulnerability indicators
-	// Ported from: hud_show_cloak_invuln() in GAUGES.C lines 1010-1036
-	drawCloakInvulnIndicators( ctx );
+		// Draw score and lives (top area, above cockpit)
+		drawScoreLives( ctx );
 
-	// Draw score popup
-	// Ported from: hud_show_score_added() in GAUGES.C lines 667-701
-	drawScorePopup( ctx );
+		// Draw cloak/invulnerability indicators
+		// Ported from: hud_show_cloak_invuln() in GAUGES.C lines 1010-1036
+		drawCloakInvulnIndicators( ctx );
+
+		// Draw score popup
+		// Ported from: hud_show_score_added() in GAUGES.C lines 667-701
+		drawScorePopup( ctx );
+
+	}
 
 	// Draw "press any key" message during death
 	// Ported from: player_dead_message() in HUD.C lines 320-332
@@ -612,7 +618,7 @@ function drawFullScreenHUD( ctx ) {
 
 function drawCockpitBackground( ctx ) {
 
-	const bmIdx = cockpit_bitmap[ CM_FULL_COCKPIT ];
+	const bmIdx = cockpit_bitmap[ _cockpitMode ];
 	if ( bmIdx < 0 ) return;
 
 	// The cockpit bitmap is 320x200 and fills the entire canvas
