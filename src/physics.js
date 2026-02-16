@@ -1,7 +1,7 @@
 // Ported from: descent-master/MAIN/PHYSICS.C
 // Player physics simulation: linear and rotational sub-stepping with drag
 
-import { find_point_seg } from './gameseg.js';
+import { find_point_seg, find_connect_side } from './gameseg.js';
 import { find_vector_intersection, HIT_NONE, HIT_WALL, HIT_BAD_P0 } from './fvi.js';
 import { wall_hit_process as fvi_wall_hit_process } from './wall.js';
 import { check_trigger as fvi_check_trigger } from './switch.js';
@@ -405,6 +405,12 @@ export function do_physics_sim( thrust_x, thrust_y, thrust_z, up_dx, up_dy, up_d
 // Pre-allocated result object (Golden Rule #5)
 const _moveResult = { x: 0, y: 0, z: 0, segnum: 0 };
 
+// Pre-allocated segment list for trigger checking (Golden Rule #5)
+// Ported from: phys_seglist[] / n_phys_segs in PHYSICS.C line 429
+const MAX_PHYS_SEGS = 20;
+const _phys_seglist = new Int16Array( MAX_PHYS_SEGS );
+let _n_phys_segs = 0;
+
 export function do_physics_move( p0_x, p0_y, p0_z, frame_x, frame_y, frame_z, playerSegnum, dt ) {
 
 	if ( frame_x === 0 && frame_y === 0 && frame_z === 0 ) {
@@ -424,6 +430,11 @@ export function do_physics_move( p0_x, p0_y, p0_z, frame_x, frame_y, frame_z, pl
 	let curSeg = playerSegnum;
 	const MAX_FVI_ITERS = 4;
 
+	// Track segments traversed for trigger checking
+	// Ported from: phys_seglist[] / n_phys_segs in PHYSICS.C line 429
+	_n_phys_segs = 0;
+	_phys_seglist[ _n_phys_segs ++ ] = playerSegnum;
+
 	for ( let iter = 0; iter < MAX_FVI_ITERS; iter ++ ) {
 
 		const hit = find_vector_intersection(
@@ -440,7 +451,19 @@ export function do_physics_move( p0_x, p0_y, p0_z, frame_x, frame_y, frame_z, pl
 			p0_y = hit.hit_pnt_y;
 			p0_z = hit.hit_pnt_z;
 
-			if ( hit.hit_seg !== - 1 ) curSeg = hit.hit_seg;
+			if ( hit.hit_seg !== - 1 ) {
+
+				// Record segment transition for trigger checking
+				if ( hit.hit_seg !== curSeg && _n_phys_segs < MAX_PHYS_SEGS ) {
+
+					_phys_seglist[ _n_phys_segs ++ ] = hit.hit_seg;
+
+				}
+
+				curSeg = hit.hit_seg;
+
+			}
+
 			break;
 
 		} else if ( hit.hit_type === HIT_WALL ) {
@@ -450,7 +473,18 @@ export function do_physics_move( p0_x, p0_y, p0_z, frame_x, frame_y, frame_z, pl
 			p0_y = hit.hit_pnt_y;
 			p0_z = hit.hit_pnt_z;
 
-			if ( hit.hit_seg !== - 1 ) curSeg = hit.hit_seg;
+			if ( hit.hit_seg !== - 1 ) {
+
+				// Record segment transition for trigger checking
+				if ( hit.hit_seg !== curSeg && _n_phys_segs < MAX_PHYS_SEGS ) {
+
+					_phys_seglist[ _n_phys_segs ++ ] = hit.hit_seg;
+
+				}
+
+				curSeg = hit.hit_seg;
+
+			}
 
 			// Process wall hit (triggers, doors)
 			if ( hit.hit_side_seg !== - 1 && hit.hit_side !== - 1 ) {
@@ -527,6 +561,24 @@ export function do_physics_move( p0_x, p0_y, p0_z, frame_x, frame_y, frame_z, pl
 		} else {
 
 			break;
+
+		}
+
+	}
+
+	// Check triggers on segment transitions
+	// Ported from: OBJECT.C lines 2007-2023 — check_trigger for each segment traversed
+	if ( _n_phys_segs > 1 && curSeg !== playerSegnum ) {
+
+		for ( let i = 0; i < _n_phys_segs - 1; i ++ ) {
+
+			const connect_side = find_connect_side( _phys_seglist[ i + 1 ], _phys_seglist[ i ] );
+
+			if ( connect_side !== - 1 ) {
+
+				fvi_check_trigger( _phys_seglist[ i ], connect_side );
+
+			}
 
 		}
 

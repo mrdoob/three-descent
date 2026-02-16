@@ -302,9 +302,6 @@ export function wall_open_door( segnum, sidenum ) {
 
 	if ( w.type !== WALL_DOOR ) return;
 
-	// Check if locked
-	if ( ( w.flags & WALL_DOOR_LOCKED ) !== 0 ) return;
-
 	// Don't reopen if already opening or waiting
 	if ( w.state === WALL_DOOR_OPENING ) return;
 	if ( w.state === WALL_DOOR_WAITING ) return;
