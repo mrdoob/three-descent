@@ -7,6 +7,8 @@ import { gr_get_string_size, gr_string } from './font.js';
 import { NORMAL_FONT, CURRENT_FONT, SUBTITLE_FONT, TITLE_FONT, GAME_FONT } from './gamefont.js';
 import { credits_show } from './credits.js';
 import { scores_view } from './scores.js';
+import { config_get_invert_mouse_y, config_set_invert_mouse_y,
+	config_get_texture_filtering, config_set_texture_filtering } from './config.js';
 
 // Difficulty level names (from GAME.H NDL=5)
 const DIFFICULTY_NAMES = [ 'TRAINEE', 'ROOKIE', 'HOTSHOT', 'ACE', 'INSANE' ];
@@ -16,7 +18,7 @@ const MENU_ITEMS = [
 	{ label: 'NEW GAME', id: 'new_game' },
 	{ label: 'LOAD GAME', id: 'load_game' },
 	{ label: 'VIEW SCORES', id: 'scores' },
-	{ label: 'ORDERING INFO', id: 'ordering' },
+	{ label: 'SETTINGS', id: 'settings' },
 	{ label: 'CREDITS', id: 'credits' },
 	{ label: 'QUIT', id: 'quit' },
 ];
@@ -174,52 +176,208 @@ export async function do_main_menu( hogFile, defaultDifficulty, gamePalette ) {
 
 		}
 
-		// Show ordering info: display order01.pcx and wait for input
-		// Ported from: show_order_form() in INFERNO.C lines 1756-1787
-		async function showOrderForm() {
+		// Settings screen: toggle options with arrow keys / mouse
+		async function showSettings() {
 
-			const orderPcx = pcx_read( hogFile, 'order01.pcx' );
+			const SETTINGS_ITEMS = [
+				{ label: 'INVERT MOUSE', id: 'invert_mouse' },
+				{ label: 'TEXTURE FILTERING', id: 'texture_filtering' },
+			];
 
-			if ( orderPcx === null ) return;
+			let settingsIndex = 0;
+			let settingsItemYPositions = [];
 
-			const orderCanvas = pcx_to_canvas( orderPcx );
+			function getSettingValue( id ) {
 
-			if ( orderCanvas === null ) return;
+				if ( id === 'invert_mouse' ) {
 
-			titleCanvas.width = orderCanvas.width;
-			titleCanvas.height = orderCanvas.height;
-			titleCtx.drawImage( orderCanvas, 0, 0 );
+					return config_get_invert_mouse_y() === true ? 'YES' : 'NO';
 
-			// Wait for any key or click
+				}
+
+				if ( id === 'texture_filtering' ) {
+
+					return config_get_texture_filtering() === 'linear' ? 'ON' : 'OFF';
+
+				}
+
+				return '';
+
+			}
+
+			function toggleSetting( id ) {
+
+				if ( id === 'invert_mouse' ) {
+
+					config_set_invert_mouse_y( config_get_invert_mouse_y() !== true );
+
+				}
+
+				if ( id === 'texture_filtering' ) {
+
+					config_set_texture_filtering(
+						config_get_texture_filtering() === 'linear' ? 'nearest' : 'linear'
+					);
+
+				}
+
+			}
+
+			function renderSettings() {
+
+				titleCtx.putImageData( _bgImageData, 0, 0 );
+				const imageData = titleCtx.getImageData( 0, 0, titleCanvas.width, titleCanvas.height );
+
+				const normalFont = NORMAL_FONT();
+				const currentFont = CURRENT_FONT();
+				const subtitleFont = SUBTITLE_FONT();
+
+				if ( normalFont === null || currentFont === null ) {
+
+					titleCtx.putImageData( imageData, 0, 0 );
+					return;
+
+				}
+
+				// Title
+				const titleFont = subtitleFont !== null ? subtitleFont : normalFont;
+				const itemHeight = normalFont.ft_h + 2;
+				const totalHeight = titleFont.ft_h + 6 + SETTINGS_ITEMS.length * itemHeight;
+				const startY = Math.floor( ( 200 - totalHeight ) / 2 );
+
+				gr_string( imageData, titleFont, 0x8000, startY, 'SETTINGS', gamePalette );
+
+				const itemsStartY = startY + titleFont.ft_h + 6;
+				settingsItemYPositions = [];
+
+				for ( let i = 0; i < SETTINGS_ITEMS.length; i ++ ) {
+
+					const item = SETTINGS_ITEMS[ i ];
+					const isSelected = ( i === settingsIndex );
+					const font = isSelected ? currentFont : normalFont;
+					const y = itemsStartY + i * itemHeight;
+
+					settingsItemYPositions.push( { y: y, h: itemHeight } );
+
+					const text = item.label + ': ' + getSettingValue( item.id );
+					gr_string( imageData, font, 0x8000, y, text, gamePalette );
+
+				}
+
+				// Hint at bottom
+				const smallFont = GAME_FONT();
+
+				if ( smallFont !== null ) {
+
+					const hintY = itemsStartY + SETTINGS_ITEMS.length * itemHeight + 10;
+					gr_string( imageData, smallFont, 0x8000, hintY, 'ENTER TO TOGGLE  ESC TO BACK', gamePalette );
+
+				}
+
+				titleCtx.putImageData( imageData, 0, 0 );
+
+			}
+
+			renderSettings();
+
 			await new Promise( ( waitResolve ) => {
+
+				function findSettingsItemAtY( y200 ) {
+
+					for ( let i = 0; i < settingsItemYPositions.length; i ++ ) {
+
+						const item = settingsItemYPositions[ i ];
+
+						if ( y200 >= item.y && y200 < item.y + item.h ) {
+
+							return i;
+
+						}
+
+					}
+
+					return - 1;
+
+				}
+
+				const onKeyLocal = ( e ) => {
+
+					e.preventDefault();
+
+					if ( e.key === 'Escape' ) {
+
+						finish();
+
+					} else if ( e.key === 'ArrowUp' ) {
+
+						settingsIndex --;
+
+						if ( settingsIndex < 0 ) settingsIndex = SETTINGS_ITEMS.length - 1;
+
+						renderSettings();
+
+					} else if ( e.key === 'ArrowDown' ) {
+
+						settingsIndex ++;
+
+						if ( settingsIndex >= SETTINGS_ITEMS.length ) settingsIndex = 0;
+
+						renderSettings();
+
+					} else if ( e.key === 'Enter' ) {
+
+						toggleSetting( SETTINGS_ITEMS[ settingsIndex ].id );
+						renderSettings();
+
+					}
+
+				};
+
+				const onMouseMoveLocal = ( e ) => {
+
+					const pos = viewportTo320x200( e.clientX, e.clientY );
+					const idx = findSettingsItemAtY( pos.y );
+
+					if ( idx !== - 1 && idx !== settingsIndex ) {
+
+						settingsIndex = idx;
+						renderSettings();
+
+					}
+
+				};
+
+				const onClickLocal = ( e ) => {
+
+					const pos = viewportTo320x200( e.clientX, e.clientY );
+					const idx = findSettingsItemAtY( pos.y );
+
+					if ( idx !== - 1 ) {
+
+						settingsIndex = idx;
+						toggleSetting( SETTINGS_ITEMS[ idx ].id );
+						renderSettings();
+
+					}
+
+				};
 
 				let resolved = false;
 
-				const finish = () => {
+				function finish() {
 
 					if ( resolved === true ) return;
 					resolved = true;
 					document.removeEventListener( 'keydown', onKeyLocal );
 					titleInner.removeEventListener( 'click', onClickLocal );
+					titleInner.removeEventListener( 'mousemove', onMouseMoveLocal );
 					waitResolve();
 
-				};
-
-				const onKeyLocal = ( e ) => {
-
-					e.preventDefault();
-					finish();
-
-				};
-
-				const onClickLocal = () => {
-
-					finish();
-
-				};
+				}
 
 				document.addEventListener( 'keydown', onKeyLocal );
 				titleInner.addEventListener( 'click', onClickLocal );
+				titleInner.addEventListener( 'mousemove', onMouseMoveLocal );
 
 			} );
 
@@ -323,9 +481,9 @@ export async function do_main_menu( hogFile, defaultDifficulty, gamePalette ) {
 
 				await scores_view( hogFile, gamePalette );
 
-			} else if ( id === 'ordering' ) {
+			} else if ( id === 'settings' ) {
 
-				await showOrderForm();
+				await showSettings();
 
 			} else if ( id === 'load_game' ) {
 

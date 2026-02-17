@@ -15,6 +15,7 @@ import { BM_FLAG_TRANSPARENT, BM_FLAG_SUPER_TRANSPARENT, BM_FLAG_RLE } from './p
 import { decode_tmap_num2, texmerge_get_cached_bitmap } from './texmerge.js';
 import { Effects, Num_effects } from './bm.js';
 import { wall_is_doorway, WID_RENDPAST_FLAG } from './wall.js';
+import { config_get_texture_filtering, config_on_texture_filtering_changed } from './config.js';
 
 // Convert Descent coordinate system to Three.js
 // Descent: X=right, Y=up, Z=forward (into screen)
@@ -56,8 +57,7 @@ function buildTexture( pixels, width, height, palette, transparent ) {
 
 	const texture = new THREE.DataTexture( rgba, width, height );
 	texture.colorSpace = THREE.SRGBColorSpace;
-	texture.magFilter = THREE.NearestFilter;
-	texture.minFilter = THREE.NearestMipmapLinearFilter;
+	applyTextureFiltering( texture );
 	texture.wrapS = THREE.RepeatWrapping;
 	texture.wrapT = THREE.RepeatWrapping;
 	texture.generateMipmaps = true;
@@ -66,6 +66,55 @@ function buildTexture( pixels, width, height, palette, transparent ) {
 	return texture;
 
 }
+
+// Apply current texture filtering setting to a texture
+function applyTextureFiltering( texture ) {
+
+	if ( config_get_texture_filtering() === 'linear' ) {
+
+		texture.magFilter = THREE.LinearFilter;
+		texture.minFilter = THREE.LinearMipmapLinearFilter;
+
+	} else {
+
+		texture.magFilter = THREE.NearestFilter;
+		texture.minFilter = THREE.NearestMipmapLinearFilter;
+
+	}
+
+}
+
+// Update all cached textures when texture filtering setting changes
+function onTextureFilteringChanged() {
+
+	for ( const [ , tex ] of textureCache ) {
+
+		applyTextureFiltering( tex );
+		tex.needsUpdate = true;
+
+	}
+
+	for ( const [ , tex ] of mergedTextureCache ) {
+
+		applyTextureFiltering( tex );
+		tex.needsUpdate = true;
+
+	}
+
+	for ( const [ , mesh ] of doorMeshes ) {
+
+		if ( mesh.material !== null && mesh.material.map !== null ) {
+
+			applyTextureFiltering( mesh.material.map );
+			mesh.material.map.needsUpdate = true;
+
+		}
+
+	}
+
+}
+
+config_on_texture_filtering_changed( onTextureFilteringChanged );
 
 // Cache for Three.js textures (keyed by bitmap index)
 const textureCache = new Map();

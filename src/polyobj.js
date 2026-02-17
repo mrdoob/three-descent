@@ -2,6 +2,7 @@
 // Polygon object (POF) model loading and rendering
 
 import * as THREE from 'three';
+import { config_get_texture_filtering, config_on_texture_filtering_changed } from './config.js';
 
 // Constants
 const MAX_SUBMODELS = 10;
@@ -598,8 +599,19 @@ function buildModelTexture( bitmapIndex, pigFile, palette ) {
 
 	const texture = new THREE.DataTexture( rgba, w, h );
 	texture.colorSpace = THREE.SRGBColorSpace;
-	texture.magFilter = THREE.NearestFilter;
-	texture.minFilter = THREE.NearestMipmapLinearFilter;
+
+	if ( config_get_texture_filtering() === 'linear' ) {
+
+		texture.magFilter = THREE.LinearFilter;
+		texture.minFilter = THREE.LinearMipmapLinearFilter;
+
+	} else {
+
+		texture.magFilter = THREE.NearestFilter;
+		texture.minFilter = THREE.NearestMipmapLinearFilter;
+
+	}
+
 	texture.wrapS = THREE.RepeatWrapping;
 	texture.wrapT = THREE.RepeatWrapping;
 	texture.generateMipmaps = true;
@@ -609,6 +621,29 @@ function buildModelTexture( bitmapIndex, pigFile, palette ) {
 	return texture;
 
 }
+
+// Update all model textures when filtering setting changes
+config_on_texture_filtering_changed( function () {
+
+	for ( const [ , tex ] of modelTextureCache ) {
+
+		if ( config_get_texture_filtering() === 'linear' ) {
+
+			tex.magFilter = THREE.LinearFilter;
+			tex.minFilter = THREE.LinearMipmapLinearFilter;
+
+		} else {
+
+			tex.magFilter = THREE.NearestFilter;
+			tex.minFilter = THREE.NearestMipmapLinearFilter;
+
+		}
+
+		tex.needsUpdate = true;
+
+	}
+
+} );
 
 // Build a Three.js Mesh for a group of texture-mapped polys sharing the same bitmap slot
 // isGlow: if true, create emissive material for engine glow polygons

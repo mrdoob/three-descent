@@ -32,7 +32,9 @@ import { PLAYER_MASS, PLAYER_DRAG, PLAYER_MAX_THRUST, PLAYER_MAX_ROTTHRUST, PLAY
 	do_physics_align_object } from './physics.js';
 import { gauges_get_canvas_ctx, gauges_mark_dirty, gauges_needs_upload, gauges_get_hud_scene, gauges_get_hud_camera } from './gauges.js';
 import { gr_string } from './font.js';
-import { NORMAL_FONT, CURRENT_FONT, SUBTITLE_FONT } from './gamefont.js';
+import { NORMAL_FONT, CURRENT_FONT, SUBTITLE_FONT, GAME_FONT } from './gamefont.js';
+import { config_get_invert_mouse_y, config_set_invert_mouse_y,
+	config_get_texture_filtering, config_set_texture_filtering } from './config.js';
 
 const GAME_ASPECT = 320 / 200;
 const COCKPIT_WINDOW_ASPECT = 320 / 140;
@@ -59,6 +61,9 @@ let _pauseWrapper = null;
 let _pauseSelectedIndex = 0;
 let _pauseStatusText = null;	// temporary status message ("GAME SAVED!", etc.)
 let _pauseStatusTimer = 0;
+let _pauseState = 'menu';	// 'menu' or 'settings'
+let _settingsSelectedIndex = 0;
+let _settingsItemYPositions = [];
 
 const PAUSE_W = 320;
 const PAUSE_H = 200;
@@ -67,6 +72,7 @@ const PAUSE_MENU_ITEMS = [
 	{ label: 'RESUME', id: 'resume' },
 	{ label: 'SAVE GAME', id: 'save' },
 	{ label: 'LOAD GAME', id: 'load' },
+	{ label: 'SETTINGS', id: 'settings' },
 	{ label: 'QUIT TO MENU', id: 'quit' },
 ];
 
@@ -601,7 +607,8 @@ function updateCamera( dt ) {
 		// Mouse movement maps to rotational thrust (pitch + yaw)
 		// Scale: mouseSpeed converts pixels to a normalized input, then scale by max_rotthrust
 		rotThrust_y = - mouse.x * mouseSpeed * PLAYER_MAX_ROTTHRUST * 8.0;
-		rotThrust_x = - mouse.y * mouseSpeed * PLAYER_MAX_ROTTHRUST * 8.0;
+		const invertY = config_get_invert_mouse_y() === true ? 1.0 : - 1.0;
+		rotThrust_x = invertY * mouse.y * mouseSpeed * PLAYER_MAX_ROTTHRUST * 8.0;
 
 	}
 
@@ -1115,6 +1122,39 @@ function handleKeyAction( e ) {
 	// When paused, only handle pause-related keys
 	if ( isPaused === true ) {
 
+		// Settings sub-screen has its own key handling
+		if ( _pauseState === 'settings' ) {
+
+			e.preventDefault();
+
+			if ( e.key === 'Escape' ) {
+
+				_pauseState = 'menu';
+				renderPauseMenu();
+
+			} else if ( e.key === 'ArrowUp' ) {
+
+				_settingsSelectedIndex --;
+				if ( _settingsSelectedIndex < 0 ) _settingsSelectedIndex = PAUSE_SETTINGS_ITEMS.length - 1;
+				renderPauseMenu();
+
+			} else if ( e.key === 'ArrowDown' ) {
+
+				_settingsSelectedIndex ++;
+				if ( _settingsSelectedIndex >= PAUSE_SETTINGS_ITEMS.length ) _settingsSelectedIndex = 0;
+				renderPauseMenu();
+
+			} else if ( e.key === 'Enter' ) {
+
+				togglePauseSetting( PAUSE_SETTINGS_ITEMS[ _settingsSelectedIndex ].id );
+				renderPauseMenu();
+
+			}
+
+			return;
+
+		}
+
 		if ( e.code === 'KeyP' || e.code === 'Escape' ) {
 
 			e.preventDefault();
@@ -1392,6 +1432,13 @@ function renderPauseMenu() {
 
 	if ( _pauseCtx === null ) return;
 
+	if ( _pauseState === 'settings' ) {
+
+		renderPauseSettings();
+		return;
+
+	}
+
 	const normalFont = NORMAL_FONT();
 	const currentFont = CURRENT_FONT();
 	const subtitleFont = SUBTITLE_FONT();
@@ -1450,6 +1497,97 @@ function renderPauseMenu() {
 
 }
 
+// --- Pause settings sub-screen ---
+
+const PAUSE_SETTINGS_ITEMS = [
+	{ label: 'INVERT MOUSE', id: 'invert_mouse' },
+	{ label: 'TEXTURE FILTERING', id: 'texture_filtering' },
+];
+
+function getPauseSettingValue( id ) {
+
+	if ( id === 'invert_mouse' ) {
+
+		return config_get_invert_mouse_y() === true ? 'YES' : 'NO';
+
+	}
+
+	if ( id === 'texture_filtering' ) {
+
+		return config_get_texture_filtering() === 'linear' ? 'ON' : 'OFF';
+
+	}
+
+	return '';
+
+}
+
+function togglePauseSetting( id ) {
+
+	if ( id === 'invert_mouse' ) {
+
+		config_set_invert_mouse_y( config_get_invert_mouse_y() !== true );
+
+	}
+
+	if ( id === 'texture_filtering' ) {
+
+		config_set_texture_filtering(
+			config_get_texture_filtering() === 'linear' ? 'nearest' : 'linear'
+		);
+
+	}
+
+}
+
+function renderPauseSettings() {
+
+	if ( _pauseCtx === null ) return;
+
+	const normalFont = NORMAL_FONT();
+	const currentFont = CURRENT_FONT();
+	const subtitleFont = SUBTITLE_FONT();
+	const smallFont = GAME_FONT();
+
+	_pauseCtx.clearRect( 0, 0, PAUSE_W, PAUSE_H );
+	const imageData = _pauseCtx.createImageData( PAUSE_W, PAUSE_H );
+
+	_settingsItemYPositions = [];
+
+	if ( normalFont === null || currentFont === null ) return;
+
+	const titleFont = subtitleFont !== null ? subtitleFont : normalFont;
+	const titleY = 60;
+	gr_string( imageData, titleFont, 0x8000, titleY, 'SETTINGS', _gamePalette );
+
+	const itemHeight = normalFont.ft_h + 4;
+	const itemsStartY = titleY + titleFont.ft_h + 16;
+
+	for ( let i = 0; i < PAUSE_SETTINGS_ITEMS.length; i ++ ) {
+
+		const item = PAUSE_SETTINGS_ITEMS[ i ];
+		const isSelected = ( i === _settingsSelectedIndex );
+		const font = isSelected ? currentFont : normalFont;
+
+		const y = itemsStartY + i * itemHeight;
+		_settingsItemYPositions.push( { y: y, h: itemHeight } );
+
+		const text = item.label + ': ' + getPauseSettingValue( item.id );
+		gr_string( imageData, font, 0x8000, y, text, _gamePalette );
+
+	}
+
+	if ( smallFont !== null ) {
+
+		const hintY = itemsStartY + PAUSE_SETTINGS_ITEMS.length * itemHeight + 10;
+		gr_string( imageData, smallFont, 0x8000, hintY, 'ENTER TO TOGGLE  ESC TO BACK', _gamePalette );
+
+	}
+
+	_pauseCtx.putImageData( imageData, 0, 0 );
+
+}
+
 // Convert viewport mouse coordinates to 320x200 canvas space
 function pauseViewportTo320x200( clientX, clientY ) {
 
@@ -1478,11 +1616,45 @@ function findPauseItemAtY( y200 ) {
 
 }
 
+function findSettingsItemAtY( y200 ) {
+
+	for ( let i = 0; i < _settingsItemYPositions.length; i ++ ) {
+
+		const item = _settingsItemYPositions[ i ];
+
+		if ( y200 >= item.y && y200 < item.y + item.h ) {
+
+			return i;
+
+		}
+
+	}
+
+	return - 1;
+
+}
+
 function onPauseMouseMove( e ) {
 
 	if ( _pauseCanvas === null ) return;
 
 	const pos = pauseViewportTo320x200( e.clientX, e.clientY );
+
+	if ( _pauseState === 'settings' ) {
+
+		const idx = findSettingsItemAtY( pos.y );
+
+		if ( idx !== - 1 && idx !== _settingsSelectedIndex ) {
+
+			_settingsSelectedIndex = idx;
+			renderPauseMenu();
+
+		}
+
+		return;
+
+	}
+
 	const idx = findPauseItemAtY( pos.y );
 
 	if ( idx !== - 1 && idx !== _pauseSelectedIndex ) {
@@ -1499,6 +1671,23 @@ function onPauseMouseClick( e ) {
 	if ( _pauseCanvas === null ) return;
 
 	const pos = pauseViewportTo320x200( e.clientX, e.clientY );
+
+	if ( _pauseState === 'settings' ) {
+
+		const idx = findSettingsItemAtY( pos.y );
+
+		if ( idx !== - 1 ) {
+
+			_settingsSelectedIndex = idx;
+			togglePauseSetting( PAUSE_SETTINGS_ITEMS[ idx ].id );
+			renderPauseMenu();
+
+		}
+
+		return;
+
+	}
+
 	const idx = findPauseItemAtY( pos.y );
 
 	if ( idx === - 1 ) return;
@@ -1561,6 +1750,12 @@ function onPauseMenuSelect( idx ) {
 
 		}
 
+	} else if ( id === 'settings' ) {
+
+		_pauseState = 'settings';
+		_settingsSelectedIndex = 0;
+		renderPauseMenu();
+
 	} else if ( id === 'quit' ) {
 
 		isPaused = false;
@@ -1575,6 +1770,7 @@ function showPauseMenu() {
 
 	ensurePauseCanvas();
 	_pauseSelectedIndex = 0;
+	_pauseState = 'menu';
 	_pauseStatusText = null;
 	clearTimeout( _pauseStatusTimer );
 	renderPauseMenu();
