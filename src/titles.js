@@ -3,6 +3,8 @@
 
 import { pcx_read, pcx_to_canvas } from './pcx.js';
 import { songs_play_song, SONG_BRIEFING } from './songs.js';
+import { GAME_FONT } from './gamefont.js';
+import { gr_get_string_size } from './font.js';
 
 // Briefing screen table — mirrors Briefing_screens[] in TITLES.C lines 309-370
 // { bs_name, level_num, message_num, text_ulx, text_uly, text_width, text_height }
@@ -39,7 +41,7 @@ const BRIEFING_COLORS = [
 // Font size — original uses 8px tall GAME_FONT at 320x200
 // Scale factor applied when rendering to screen-sized canvas
 const CHAR_HEIGHT = 8;
-const CHAR_WIDTH = 6; // approximate monospace width at 320x200
+const CHAR_WIDTH_FALLBACK = 6;
 
 // Typewriter delay: 28ms per character (KEY_DELAY_DEFAULT in TITLES.C)
 const KEY_DELAY_DEFAULT = 28;
@@ -47,6 +49,63 @@ const KEY_DELAY_DEFAULT = 28;
 // Cached briefing text (decrypted once)
 let _briefingText = null;
 let _endingText = null;
+
+// Cached per-character advances from GAME_FONT (show_char_delay/gr_get_string_size parity)
+let _briefingFont = null;
+const _briefingCharAdvance = new Int16Array( 256 );
+for ( let i = 0; i < _briefingCharAdvance.length; i ++ ) _briefingCharAdvance[ i ] = - 1;
+
+function get_briefing_font() {
+
+	if ( _briefingFont === null ) {
+
+		_briefingFont = GAME_FONT();
+
+	}
+
+	return _briefingFont;
+
+}
+
+function get_briefing_char_width( ch ) {
+
+	const code = ch.charCodeAt( 0 );
+
+	if ( code >= 0 && code < _briefingCharAdvance.length ) {
+
+		if ( _briefingCharAdvance[ code ] >= 0 ) {
+
+			return _briefingCharAdvance[ code ];
+
+		}
+
+	}
+
+	const font = get_briefing_font();
+	let width = CHAR_WIDTH_FALLBACK;
+
+	if ( font !== null ) {
+
+		const size = gr_get_string_size( font, ch );
+		width = size.width;
+
+		if ( width <= 0 ) {
+
+			width = font.ft_w;
+
+		}
+
+	}
+
+	if ( code >= 0 && code < _briefingCharAdvance.length ) {
+
+		_briefingCharAdvance[ code ] = width;
+
+	}
+
+	return width;
+
+}
 
 // ---- Text decryption ----
 // Same cipher as bitmaps.bin: rotate-left + XOR 0xD3 + rotate-left
@@ -637,12 +696,16 @@ async function display_briefing_text( bsp, message ) {
 	let tabStop = 0;
 	let textX = bsp.text_ulx;
 	let textY = bsp.text_uly;
+	const textXMax = bsp.text_ulx + bsp.text_width;
+	const textYMax = bsp.text_uly + bsp.text_height;
 	let prevCh = 10; // start as if previous was newline
 	let pos = 0;
 	let aborted = false;
 	let delayMs = KEY_DELAY_DEFAULT;
 	let skipAnimation = false;
 	let endedWithStop = false; // Track if $S command already handled the final wait
+	const spaceWidth = get_briefing_char_width( ' ' );
+	let newPage = false;
 
 	// Pre-create a text element for efficient rendering
 	// We'll use a monospace pre element that we append characters to
@@ -769,7 +832,18 @@ async function display_briefing_text( bsp, message ) {
 					}
 
 					if ( pos < message.length ) pos ++;
-					tabStop = parseInt( numStr.trim(), 10 ) || 0;
+
+					const parsedTabStop = parseInt( numStr.trim(), 10 );
+					if ( Number.isNaN( parsedTabStop ) ) {
+
+						tabStop = 0;
+
+					} else {
+
+						tabStop = parsedTabStop;
+
+					}
+
 					prevCh = 10;
 
 				} else if ( cmd === 'R' || cmd === 'N' || cmd === 'O' || cmd === 'B' ) {
@@ -806,8 +880,7 @@ async function display_briefing_text( bsp, message ) {
 
 				} else if ( cmd === 'P' ) {
 
-					// New page — wait for key, then clear text
-					// Skip to end of line
+					// New page marker, handled by the common page-break path below.
 					while ( pos < message.length && message.charAt( pos ) !== '\n' ) {
 
 						pos ++;
@@ -815,43 +888,26 @@ async function display_briefing_text( bsp, message ) {
 					}
 
 					if ( pos < message.length ) pos ++;
-
-					if ( _skipBriefing === true ) {
-
-						aborted = true;
-						break;
-
-					}
-
-					skipAnimation = false;
-					keyPressed = null;
-
-					const pageResult = await wait_for_key_or_click( overlay );
-
-					if ( pageResult === 'escape' || _skipBriefing === true ) {
-
-						aborted = true;
-						break;
-
-					}
-
-					keyPressed = null;
-
-					// Reload background and clear text
-					textEl.innerHTML = '';
-					currentSpan = createColorSpan( currentColor );
-					textEl.appendChild( currentSpan );
-					textX = bsp.text_ulx;
-					textY = bsp.text_uly;
+					newPage = true;
 					prevCh = 10;
 
 				}
 
 			} else if ( ch === '\t' ) {
 
-				// Tab — insert spaces
-				const spacesNeeded = tabStop > 0 ? Math.max( 1, Math.floor( tabStop / CHAR_WIDTH ) ) : 4;
-				currentSpan.textContent += ' '.repeat( spacesNeeded );
+				// Ported from: TITLES.C line 845-846
+				if ( tabStop > 0 && textX - bsp.text_ulx < tabStop ) {
+
+					const targetX = bsp.text_ulx + tabStop;
+
+					while ( textX < targetX ) {
+
+						currentSpan.textContent += ' ';
+						textX += spaceWidth;
+
+					}
+
+				}
 
 			} else if ( ch === ';' && prevCh === 10 ) {
 
@@ -881,7 +937,7 @@ async function display_briefing_text( bsp, message ) {
 
 				} else {
 
-					prevCh = 10;
+					prevCh = ch.charCodeAt( 0 );
 
 				}
 
@@ -890,7 +946,7 @@ async function display_briefing_text( bsp, message ) {
 				// Regular character — typewriter delay
 				prevCh = ch.charCodeAt( 0 );
 				currentSpan.textContent += ch;
-				textX += CHAR_WIDTH;
+				textX += get_briefing_char_width( ch );
 
 				if ( skipAnimation !== true && delayMs > 0 ) {
 
@@ -912,6 +968,38 @@ async function display_briefing_text( bsp, message ) {
 					}
 
 				}
+
+			}
+
+			if ( textX > textXMax ) {
+
+				currentSpan.textContent += '\n';
+				textX = bsp.text_ulx;
+				textY += CHAR_HEIGHT;
+
+			}
+
+			if ( newPage === true || textY > textYMax ) {
+
+				newPage = false;
+				skipAnimation = false;
+				keyPressed = null;
+
+				const pageResult = await wait_for_key_or_click( overlay );
+
+				if ( pageResult === 'escape' || _skipBriefing === true ) {
+
+					aborted = true;
+					break;
+
+				}
+
+				textEl.innerHTML = '';
+				currentSpan = createColorSpan( currentColor );
+				textEl.appendChild( currentSpan );
+				textX = bsp.text_ulx;
+				textY = bsp.text_uly;
+				delayMs = KEY_DELAY_DEFAULT;
 
 			}
 
