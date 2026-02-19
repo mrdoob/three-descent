@@ -17,7 +17,7 @@ import {
 	SEGMENT_IS_FUELCEN, SEGMENT_IS_CONTROLCEN, SEGMENT_IS_ROBOTMAKER
 } from './fuelcen.js';
 import {
-	OBJ_HOSTAGE, OBJ_POWERUP, OBJ_NONE,
+	OBJ_HOSTAGE, OBJ_POWERUP, OBJ_NONE, OBJ_PLAYER,
 	get_Highest_object_index
 } from './object.js';
 import { POW_KEY_BLUE, POW_KEY_RED, POW_KEY_GOLD } from './collide.js';
@@ -89,6 +89,7 @@ let _automapGroup = null;		// THREE.Group holding line geometry + objects
 let _edgeLines = null;			// THREE.LineSegments for edges
 let _playerArrow = null;		// THREE.LineSegments for player arrow
 let _objectSprites = [];		// sprites for keys/hostages
+let _playerArrowSize = 5.0;
 
 // Saved camera state
 const _savedCameraPos = new THREE.Vector3();
@@ -454,7 +455,34 @@ function buildPlayerArrow() {
 	_playerArrow.renderOrder = 999;
 
 	if ( _automapGroup !== null ) _automapGroup.add( _playerArrow );
+	_playerArrowSize = getPlayerObjectSize();
 	updatePlayerArrow();
+
+}
+
+function getPlayerObjectSize() {
+
+	if ( Objects[ 0 ] !== undefined && Objects[ 0 ].type === OBJ_PLAYER && Objects[ 0 ].size > 0 ) {
+
+		return Objects[ 0 ].size;
+
+	}
+
+	const highestObj = get_Highest_object_index();
+
+	for ( let i = 0; i <= highestObj; i ++ ) {
+
+		const obj = Objects[ i ];
+
+		if ( obj !== undefined && obj.type === OBJ_PLAYER && obj.size > 0 ) {
+
+			return obj.size;
+
+		}
+
+	}
+
+	return 5.0;
 
 }
 
@@ -465,7 +493,7 @@ function updatePlayerArrow() {
 	if ( _playerArrow === null ) return;
 
 	const pos = _savedCameraPos;
-	const size = 5.0;	// Player ship size approximation
+	const size = _playerArrowSize;
 
 	// Extract forward, right, up from saved quaternion (Descent coords → Three.js)
 	_tmpVec.set( 0, 0, - 1 ).applyQuaternion( _savedCameraQuat );
