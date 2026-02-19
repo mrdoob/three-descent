@@ -12,7 +12,7 @@ import { OBJ_PLAYER, OBJ_ROBOT, OBJ_CNTRLCEN, OBJ_CLUTTER, OBJ_HOSTAGE, OBJ_POWE
 import { wall_set_externals, wall_set_render_callback, wall_set_player_callbacks, wall_set_illusion_callback, wall_set_explosion_callback, wall_set_explode_wall_callback, wall_init_door_textures, wall_reset, wall_toggle } from './wall.js';
 import { collide_set_externals, apply_damage_to_player, collide_robot_and_weapon, collide_weapon_and_wall, collide_badass_explosion, collide_player_and_powerup, collide_player_and_nasty_robot, collide_robot_and_player, collide_player_and_controlcen, collide_player_and_clutter, drop_player_eggs, scrape_object_on_wall } from './collide.js';
 import { init_special_effects, effects_set_externals, effects_set_render_callback, reset_special_effects } from './effects.js';
-import { switch_set_externals } from './switch.js';
+import { switch_set_externals, Triggers, Num_triggers } from './switch.js';
 import { laser_init, laser_set_externals, laser_get_homing_object_dist, laser_get_stuck_flares, laser_get_active_weapons, Primary_weapon, Secondary_weapon, set_primary_weapon, set_secondary_weapon, FLARE_ID } from './laser.js';
 import { fireball_init, fireball_set_badass_wall_callback, fireball_get_active, object_create_explosion, explode_model, debris_cleanup, init_exploding_walls, explode_wall, VCLIP_PLAYER_HIT } from './fireball.js';
 import { ai_set_externals, init_robots_for_level, ai_reset_gun_point_cache, ai_reset_anim_cache, AILocalInfo, ai_notify_player_fired_laser, ai_do_cloak_stuff, ai_get_believed_player_pos } from './ai.js';
@@ -253,9 +253,84 @@ function saveGame() {
 	if ( pp === null ) return false;
 
 	const cam = getCamera();
+	const levelPowerups = powerup_get_live();
+	const levelRobotState = [];
+	const levelPowerupState = [];
+	const droppedPowerups = [];
+	const levelWallState = [];
+	const levelTriggerState = [];
+
+	for ( let i = 0; i < liveRobots.length; i ++ ) {
+
+		const robot = liveRobots[ i ];
+		levelRobotState.push( {
+			alive: robot.alive === true,
+			shields: robot.obj.shields,
+			pos_x: robot.obj.pos_x,
+			pos_y: robot.obj.pos_y,
+			pos_z: robot.obj.pos_z,
+			segnum: robot.obj.segnum
+		} );
+
+	}
+
+	for ( let i = 0; i < levelPowerups.length; i ++ ) {
+
+		const pw = levelPowerups[ i ];
+
+		// Dropped powerups are not part of the base level object list; persist full spawn data.
+		if ( pw.dropped === true ) {
+
+			if ( pw.alive === true ) {
+
+				droppedPowerups.push( {
+					id: pw.obj.id,
+					pos_x: pw.obj.pos_x,
+					pos_y: pw.obj.pos_y,
+					pos_z: pw.obj.pos_z,
+					segnum: pw.obj.segnum,
+					lifeleft: pw.lifeleft
+				} );
+
+			}
+
+			continue;
+
+		}
+
+		levelPowerupState.push( pw.alive === true );
+
+	}
+
+	for ( let i = 0; i < Walls.length; i ++ ) {
+
+		const w = Walls[ i ];
+		if ( w === undefined || w === null ) continue;
+
+		levelWallState.push( {
+			index: i,
+			hps: w.hps,
+			flags: w.flags,
+			state: w.state
+		} );
+
+	}
+
+	for ( let i = 0; i < Num_triggers; i ++ ) {
+
+		const t = Triggers[ i ];
+		if ( t === undefined || t === null ) continue;
+
+		levelTriggerState.push( {
+			index: i,
+			flags: t.flags,
+			time: t.time
+		} );
+
+	}
 
 	const saveData = {
-		version: 1,
+		version: 2,
 		level: currentLevelNum,
 		shields: playerShields,
 		energy: playerEnergy,
@@ -268,11 +343,23 @@ function saveGame() {
 		lives: playerLives,
 		score: playerScore,
 		kills: playerKills,
+		primaryWeapon: Primary_weapon,
+		secondaryWeapon: Secondary_weapon,
 		keys: { blue: playerKeys.blue, red: playerKeys.red, gold: playerKeys.gold },
+		cloakTime: playerCloakTime,
+		invulnerableTime: playerInvulnerableTime,
 		pos: { x: pp.x, y: pp.y, z: pp.z },
 		quat: cam !== null ? { x: cam.quaternion.x, y: cam.quaternion.y, z: cam.quaternion.z, w: cam.quaternion.w } : null,
 		difficulty: Difficulty_level,
-		hostagesSaved: hostage_get_total_saved()
+		hostagesSaved: hostage_get_total_saved(),
+		hostagesLevelSaved: hostage_get_level_saved(),
+		levelState: {
+			robots: levelRobotState,
+			powerups: levelPowerupState,
+			droppedPowerups: droppedPowerups,
+			walls: levelWallState,
+			triggers: levelTriggerState
+		}
 	};
 
 	try {
@@ -298,7 +385,7 @@ function loadGame() {
 		if ( json === null ) return false;
 
 		const saveData = JSON.parse( json );
-		if ( saveData.version !== 1 ) return false;
+		if ( saveData.version !== 1 && saveData.version !== 2 ) return false;
 
 		console.log( 'LOAD: Loading saved game from level ' + saveData.level );
 
@@ -1703,9 +1790,9 @@ function loadLevelData( levelFile ) {
 			SOUND_HOMING_WARNING: SOUND_HOMING_WARNING
 		} );
 
-			// Set up wall-hit damage callback
-			// Ported from: collide_player_and_wall() in COLLIDE.C lines 654-693
-			physics_set_wall_hit_callback( function ( damage, volume, hit_x, hit_y, hit_z, hitseg, hitside ) {
+		// Set up wall-hit damage callback
+		// Ported from: collide_player_and_wall() in COLLIDE.C lines 654-693
+		physics_set_wall_hit_callback( function ( damage, volume, hit_x, hit_y, hit_z, hitseg, hitside ) {
 
 			if ( playerDead === true ) return;
 			if ( playerInvulnerableTime > 0 ) return;
@@ -1733,34 +1820,34 @@ function loadLevelData( levelFile ) {
 
 			}
 
-			} );
+		} );
 
-			// Set up player-object collision callback.
-			// Ported from: collide_two_objects() dispatch in COLLIDE.C for OBJ_PLAYER vs OBJ_CNTRLCEN/OBJ_CLUTTER.
-			physics_set_object_hit_callback( function ( hitObjectNum, hit_x, hit_y, hit_z ) {
+		// Set up player-object collision callback.
+		// Ported from: collide_two_objects() dispatch in COLLIDE.C for OBJ_PLAYER vs OBJ_CNTRLCEN/OBJ_CLUTTER.
+		physics_set_object_hit_callback( function ( hitObjectNum, hit_x, hit_y, hit_z ) {
 
-				if ( playerDead === true ) return;
+			if ( playerDead === true ) return;
 
-				const obj = Objects[ hitObjectNum ];
-				if ( obj === undefined || obj === null ) return;
+			const obj = Objects[ hitObjectNum ];
+			if ( obj === undefined || obj === null ) return;
 
-				if ( obj.type === OBJ_CNTRLCEN ) {
+			if ( obj.type === OBJ_CNTRLCEN ) {
 
-					collide_player_and_controlcen( obj, hit_x, hit_y, hit_z );
-					return;
+				collide_player_and_controlcen( obj, hit_x, hit_y, hit_z );
+				return;
 
-				}
+			}
 
-				if ( obj.type === OBJ_CLUTTER ) {
+			if ( obj.type === OBJ_CLUTTER ) {
 
-					collide_player_and_clutter( obj, hit_x, hit_y, hit_z );
+				collide_player_and_clutter( obj, hit_x, hit_y, hit_z );
 
-				}
+			}
 
-			} );
+		} );
 
-			// Register frame callback for powerup collection and reactor
-			game_set_frame_callback( onFrameCallback );
+		// Register frame callback for powerup collection and reactor
+		game_set_frame_callback( onFrameCallback );
 
 		// Register quit-to-menu callback for pause menu
 		game_set_quit_callback( function () { restartGame(); } );
@@ -1805,23 +1892,22 @@ function loadLevelData( levelFile ) {
 		playerKeys.blue = sd.keys.blue === true;
 		playerKeys.red = sd.keys.red === true;
 		playerKeys.gold = sd.keys.gold === true;
-		playerCloakTime = 0;
-		playerInvulnerableTime = 0;
+		playerCloakTime = ( sd.cloakTime !== undefined ) ? sd.cloakTime : 0;
+		playerInvulnerableTime = ( sd.invulnerableTime !== undefined ) ? sd.invulnerableTime : 0;
 		playerDead = false;
 
-		// Restore selected weapons
-		if ( sd.primaryFlags > 1 ) {
+		// Restore hostage tracking totals.
+		const inLevelHostages = hostage_get_in_level();
+		hostage_reset_all();
+		hostage_add_in_level( inLevelHostages );
+		if ( sd.hostagesSaved !== undefined ) hostage_add_total_saved( sd.hostagesSaved );
+		if ( sd.hostagesLevelSaved !== undefined ) hostage_add_level_saved( sd.hostagesLevelSaved );
 
-			// Auto-select best available primary weapon
-			autoSelectPrimary();
-
-		}
-
-		if ( sd.secondaryFlags > 1 || sd.secondaryAmmo[ 0 ] > 0 ) {
-
-			autoSelectSecondary();
-
-		}
+		// Restore selected weapons (fallback to auto-select for older v1 saves)
+		if ( sd.primaryWeapon !== undefined ) set_primary_weapon( sd.primaryWeapon );
+		else if ( sd.primaryFlags > 1 ) autoSelectPrimary();
+		if ( sd.secondaryWeapon !== undefined ) set_secondary_weapon( sd.secondaryWeapon );
+		else if ( sd.secondaryFlags > 1 || sd.secondaryAmmo[ 0 ] > 0 ) autoSelectSecondary();
 
 		// Restore camera position/orientation
 		const cam = getCamera();
@@ -1834,6 +1920,163 @@ function loadLevelData( levelFile ) {
 			if ( sd.quat !== null && sd.quat !== undefined ) {
 
 				cam.quaternion.set( sd.quat.x, sd.quat.y, sd.quat.z, sd.quat.w );
+
+			}
+
+		}
+
+		// Restore level object state for parity with original save/restore behavior.
+		if ( sd.levelState !== undefined && sd.levelState !== null ) {
+
+			// Robots/reactor state
+			const robotState = sd.levelState.robots;
+			if ( Array.isArray( robotState ) ) {
+
+				let reactorDeadFromSave = false;
+				const count = Math.min( liveRobots.length, robotState.length );
+				for ( let i = 0; i < count; i ++ ) {
+
+					const rs = robotState[ i ];
+					const robot = liveRobots[ i ];
+
+					if ( rs === null || rs === undefined || robot === undefined ) continue;
+
+					robot.alive = rs.alive === true;
+					if ( rs.shields !== undefined ) robot.obj.shields = rs.shields;
+					if ( rs.segnum !== undefined ) robot.obj.segnum = rs.segnum;
+
+					if ( rs.pos_x !== undefined && rs.pos_y !== undefined && rs.pos_z !== undefined ) {
+
+						robot.obj.pos_x = rs.pos_x;
+						robot.obj.pos_y = rs.pos_y;
+						robot.obj.pos_z = rs.pos_z;
+
+						if ( robot.mesh !== null ) {
+
+							robot.mesh.position.set( rs.pos_x, rs.pos_y, - rs.pos_z );
+
+						}
+
+					}
+
+					if ( robot.mesh !== null ) {
+
+						robot.mesh.visible = ( robot.alive === true );
+
+					}
+
+					if ( robot.isReactor === true && robot.alive !== true ) {
+
+						reactorDeadFromSave = true;
+
+					}
+
+				}
+
+				if ( reactorDeadFromSave === true && cntrlcen_is_self_destruct_active() !== true ) {
+
+					startSelfDestruct();
+
+				}
+
+			}
+
+			// Base level powerups/hostages alive state
+			const powerupState = sd.levelState.powerups;
+			if ( Array.isArray( powerupState ) ) {
+
+				const pws = powerup_get_live();
+				const scene = getScene();
+				let stateIdx = 0;
+
+				for ( let i = 0; i < pws.length && stateIdx < powerupState.length; i ++ ) {
+
+					const pw = pws[ i ];
+					if ( pw.dropped === true ) continue;
+
+					const alive = powerupState[ stateIdx ] === true;
+					stateIdx ++;
+
+					if ( alive !== true && pw.alive === true ) {
+
+						if ( pw.sprite !== null && scene !== null ) {
+
+							scene.remove( pw.sprite );
+
+						}
+
+						pw.alive = false;
+
+					}
+
+				}
+
+			}
+
+			// Dropped powerups spawned by destroyed robots
+			const droppedState = sd.levelState.droppedPowerups;
+			if ( Array.isArray( droppedState ) ) {
+
+				for ( let i = 0; i < droppedState.length; i ++ ) {
+
+					const dp = droppedState[ i ];
+					if ( dp === null || dp === undefined ) continue;
+
+					const beforeCount = powerup_get_live().length;
+					spawnDroppedPowerup( dp.id, dp.pos_x, dp.pos_y, dp.pos_z, dp.segnum );
+					const after = powerup_get_live();
+					if ( after.length > beforeCount ) {
+
+						const spawned = after[ after.length - 1 ];
+						if ( spawned.dropped === true && dp.lifeleft !== undefined ) spawned.lifeleft = dp.lifeleft;
+
+					}
+
+				}
+
+			}
+
+			// Wall state (blast damage, open/closed flags, etc.)
+			const wallState = sd.levelState.walls;
+			if ( Array.isArray( wallState ) ) {
+
+				for ( let i = 0; i < wallState.length; i ++ ) {
+
+					const ws = wallState[ i ];
+					if ( ws === null || ws === undefined ) continue;
+					if ( ws.index === undefined || ws.index < 0 || ws.index >= Walls.length ) continue;
+
+					const w = Walls[ ws.index ];
+					if ( w === undefined || w === null ) continue;
+
+					if ( ws.hps !== undefined ) w.hps = ws.hps;
+					if ( ws.flags !== undefined ) w.flags = ws.flags;
+					if ( ws.state !== undefined ) w.state = ws.state;
+
+				}
+
+				// Re-sync door textures to restored wall state.
+				wall_init_door_textures();
+
+			}
+
+			// Trigger state (one-shot disabled flags + timers)
+			const triggerState = sd.levelState.triggers;
+			if ( Array.isArray( triggerState ) ) {
+
+				for ( let i = 0; i < triggerState.length; i ++ ) {
+
+					const ts = triggerState[ i ];
+					if ( ts === null || ts === undefined ) continue;
+					if ( ts.index === undefined || ts.index < 0 || ts.index >= Num_triggers ) continue;
+
+					const trig = Triggers[ ts.index ];
+					if ( trig === undefined || trig === null ) continue;
+
+					if ( ts.flags !== undefined ) trig.flags = ts.flags;
+					if ( ts.time !== undefined ) trig.time = ts.time;
+
+				}
 
 			}
 
