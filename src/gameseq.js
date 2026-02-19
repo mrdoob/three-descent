@@ -36,7 +36,7 @@ import { cntrlcen_set_externals, cntrlcen_set_reactor, init_controlcen_for_level
 	cntrlcen_is_self_destruct_active, cntrlcen_reset,
 	do_controlcen_frame, do_controlcen_destroyed_frame } from './cntrlcen.js';
 import { Robot_info, N_robot_types } from './robot.js';
-import { do_morph_frame } from './morph.js';
+import { do_morph_frame, start_robot_morph } from './morph.js';
 import { gauges_init, gauges_update, gauges_flash_damage, gauges_set_white_flash, gauges_draw, gauges_set_externals, gauges_add_score_points, gauges_set_cockpit_mode } from './gauges.js';
 import { hud_show_message } from './hud.js';
 import { powerup_set_externals, powerup_place, powerup_place_hostage, powerup_do_frame, powerup_cleanup, powerup_get_live, spawnDroppedPowerup, buildSpriteTexture } from './powerup.js';
@@ -1975,9 +1975,6 @@ function spawnMatcenRobot( segnum, robotType, pos_x, pos_y, pos_z, matcenNum ) {
 	);
 	mesh.quaternion.setFromRotationMatrix( m );
 
-	// Start with zero scale for morph animation (ported from MORPH.C)
-	mesh.scale.set( 0.01, 0.01, 0.01 );
-
 	scene.add( mesh );
 
 	// Add to liveRobots for weapon collision + AI
@@ -1998,18 +1995,15 @@ function spawnMatcenRobot( segnum, robotType, pos_x, pos_y, pos_z, matcenNum ) {
 
 	liveRobots.push( robot );
 
-	// Morph animation state (ported from morph_data in MORPH.H)
-	// Scale animation approximates vertex morphing from bounding box to final position
-	robot.morphing = true;
-	robot.morph_timer = 0;
-	robot.morph_duration = 1.0;	// seconds (matches VCLIP_MORPHING_ROBOT play time)
-
-	// Initialize AI for the new robot — start still during morph
+	// Initialize AI for the new robot — start still during morph animation
 	robot.aiLocal = new AILocalInfo();
 	robot.aiLocal.mode = 0;	// AIM_STILL — don't chase during morph animation
 	robot.aiLocal.player_awareness_type = 4;
 	robot.aiLocal.player_awareness_time = 6.0;
 	robot.aiLocal.next_fire = Math.random() * 2.0;
+
+	// Start MORPH.C-style staged per-vertex morph.
+	start_robot_morph( robot );
 
 	console.log( 'MATCEN: Spawned robot type ' + robotType + ' in seg ' + segnum +
 		' (' + liveRobots.filter( r => r.alive === true ).length + ' total alive)' );
@@ -2169,9 +2163,6 @@ function spawnGatedRobot( segnum, robotType, pos_x, pos_y, pos_z ) {
 	);
 	mesh.quaternion.setFromRotationMatrix( m );
 
-	// Start with zero scale for morph animation
-	mesh.scale.set( 0.01, 0.01, 0.01 );
-
 	scene.add( mesh );
 
 	// Add to liveRobots for weapon collision + AI
@@ -2184,17 +2175,14 @@ function spawnGatedRobot( segnum, robotType, pos_x, pos_y, pos_z ) {
 
 	liveRobots.push( robot );
 
-	// Morph animation state
-	robot.morphing = true;
-	robot.morph_timer = 0;
-	robot.morph_duration = 1.0;
-
 	// Initialize AI — immediately aware and chasing
 	robot.aiLocal = new AILocalInfo();
 	robot.aiLocal.mode = 1;	// AIM_CHASE_OBJECT — gated robots immediately attack
 	robot.aiLocal.player_awareness_type = 4;
 	robot.aiLocal.player_awareness_time = 6.0;
 	robot.aiLocal.next_fire = Math.random() * 1.5;
+
+	start_robot_morph( robot );
 
 	console.log( 'BOSS GATE: Spawned robot type ' + robotType + ' in seg ' + segnum +
 		' (' + liveRobots.filter( r => r.alive === true ).length + ' total alive)' );
