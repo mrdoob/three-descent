@@ -910,7 +910,7 @@ async function advanceLevel() {
 	if ( _pendingSaveRestore === null ) {
 
 		show_title_canvas();
-		await do_briefing_screens( _hogFile, currentLevelNum );
+		await do_briefing_screens( _hogFile, currentLevelNum, _pigFile, _palette );
 		hide_title_canvas();
 
 	}
@@ -2480,7 +2480,7 @@ export async function restartGame() {
 	game_reset_physics();
 
 	// Show briefing screens for level 1
-	await do_briefing_screens( _hogFile, 1 );
+	await do_briefing_screens( _hogFile, 1, _pigFile, _palette );
 	hide_title_canvas();
 
 	songs_play_level_song( currentLevelNum );

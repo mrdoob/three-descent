@@ -175,7 +175,7 @@ async function startGame() {
 	gameseq_get_secondary_ammo()[ 0 ] = 2 + 4 - gameseq_get_difficulty();
 
 	// Show intro briefing screens (level 0 + level 1)
-	await do_briefing_screens( hogFile, 1 );
+	await do_briefing_screens( hogFile, 1, pigFile, palette );
 
 	// Hide title canvas and start gameplay
 	hide_title_canvas();
