@@ -613,6 +613,7 @@ function updateCamera( dt ) {
 	}
 
 	const keys = controls_get_keys();
+	const manualRollActive = ( keys[ 'KeyQ' ] === true || keys[ 'KeyE' ] === true );
 
 	// Keyboard roll (Q/E)
 	if ( keys[ 'KeyQ' ] ) rotThrust_z += PLAYER_MAX_ROTTHRUST;
@@ -635,9 +636,13 @@ function updateCamera( dt ) {
 	set_object_turnroll( dt );
 	camera.rotateZ( getTurnroll() );
 
-	// Auto-level the ship toward current segment orientation (ported from PHYSICS.C line 1049)
-	// PF_LEVELLING gradually rotates the ship back to upright when not actively rolling
-	do_physics_align_object( camera, playerSegnum, dt );
+	// Auto-level the ship toward current segment orientation (ported from PHYSICS.C line 1049).
+	// Manual roll input (Q/E) takes precedence so auto-level doesn't counter-steer in the same frame.
+	if ( manualRollActive !== true ) {
+
+		do_physics_align_object( camera, playerSegnum, dt );
+
+	}
 
 	// --- Linear physics (ported from do_physics_sim + read_flying_controls) ---
 

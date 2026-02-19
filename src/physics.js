@@ -31,16 +31,15 @@ export function physics_set_wall_hit_callback( fn ) {
 
 }
 
-// Turn banking constants (converted from fixed-point to float)
+// Turn banking constants (converted from fixed-angle units to radians)
 // Ported from: PHYSICS.C lines 269-272
-// TURNROLL_SCALE = (0x4ec4/2) in fixang, converts to ~0.154 in our float system
-// ROLL_RATE = 0x2000 fixang/sec = 0.785 rad/s (~45°/sec max interpolation rate)
-const TURNROLL_SCALE = 0.154;
-const ROLL_RATE = 0.785;
+const FIXANG_TO_RAD = ( Math.PI * 2.0 ) / 65536.0;
+const TURNROLL_SCALE = 0.154;	// (0x4ec4/2)/65536
+const ROLL_RATE = 0x2000 * FIXANG_TO_RAD;	// ~0.785 rad/s (45°/s)
 
 // Auto-level constants (from PHYSICS.C do_physics_align_object)
-// DAMP_ANG = 0x400 fixang = 0x400/65536 radians ≈ 0.0156 radians (~0.9°)
-const DAMP_ANG = 0.0156;
+// DAMP_ANG = 0x400 fixang -> ~0.098 rad (~5.6°)
+const DAMP_ANG = 0x400 * FIXANG_TO_RAD;
 
 // Player velocity in Descent coordinates (persistent across frames)
 const playerVelocity = { x: 0, y: 0, z: 0 };
