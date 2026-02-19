@@ -2,7 +2,7 @@
 // Robot AI: awareness, rotation, firing, movement
 
 import { find_point_seg, compute_center_point_on_side, compute_segment_center } from './gameseg.js';
-import { find_vector_intersection, HIT_NONE, HIT_WALL, HIT_BAD_P0 } from './fvi.js';
+import { find_vector_intersection, sphere_intersects_wall, HIT_NONE, HIT_WALL, HIT_BAD_P0 } from './fvi.js';
 import { Laser_create_new, PARENT_ROBOT, PROXIMITY_ID, laser_get_weapon } from './laser.js';
 import { object_create_explosion } from './fireball.js';
 import { Weapon_info } from './weapon.js';
@@ -11,7 +11,7 @@ import { Robot_info, N_robot_types,
 	N_ANIM_STATES, AS_REST, AS_ALERT, AS_FIRE, AS_RECOIL, AS_FLINCH,
 	AIS_NONE, AIS_REST, AIS_SRCH, AIS_LOCK, AIS_FLIN, AIS_FIRE, AIS_RECO, AIS_ERR_,
 	Mike_to_matt_xlate, ANIM_RATE, Flinch_scale, Attack_scale } from './bm.js';
-import { Segments, Num_segments, Walls, GameTime } from './mglobal.js';
+import { Vertices, Segments, Num_segments, Walls, GameTime } from './mglobal.js';
 import { IS_CHILD, MAX_SIDES_PER_SEGMENT } from './segment.js';
 import { wall_open_door, wall_is_doorway, WID_FLY_FLAG, WALL_DOOR, WALL_DOOR_CLOSED, WALL_DOOR_LOCKED, KEY_NONE } from './wall.js';
 import { create_path_to_player, create_path_to_station, create_n_segment_path,
@@ -683,6 +683,50 @@ export function ai_notify_player_fired_laser( weaponIdx, dir_x, dir_y, dir_z ) {
 // Ported from: AI.C lines 2271-2528
 // ---------------------------------------------------------------
 
+// Return true if boss can fit in a segment.
+// Ported from: boss_fits_in_seg() in AI.C lines 2237-2261
+function boss_fits_in_seg( bossObj, segnum ) {
+
+	if ( segnum < 0 || segnum >= Num_segments ) return false;
+
+	const seg = Segments[ segnum ];
+	const segcenter = compute_segment_center( segnum );
+	const bossRad = ( ( bossObj.size !== undefined && bossObj.size > 0 ) ? bossObj.size : 1.0 ) * 0.75;
+
+	for ( let posnum = 0; posnum < 9; posnum ++ ) {
+
+		let px, py, pz;
+
+		if ( posnum === 0 ) {
+
+			px = segcenter.x;
+			py = segcenter.y;
+			pz = segcenter.z;
+
+		} else {
+
+			const vi = seg.verts[ posnum - 1 ];
+			const vx = Vertices[ vi * 3 + 0 ];
+			const vy = Vertices[ vi * 3 + 1 ];
+			const vz = Vertices[ vi * 3 + 2 ];
+			px = ( vx + segcenter.x ) * 0.5;
+			py = ( vy + segcenter.y ) * 0.5;
+			pz = ( vz + segcenter.z ) * 0.5;
+
+		}
+
+		if ( sphere_intersects_wall( px, py, pz, segnum, bossRad ) !== true ) {
+
+			return true;
+
+		}
+
+	}
+
+	return false;
+
+}
+
 // BFS to find segments the boss can teleport to
 // Ported from: init_boss_segments() in AI.C lines 2271-2355
 function init_boss_segments() {
@@ -757,8 +801,9 @@ function init_boss_segments() {
 			head &= ( QUEUE_SIZE - 1 );
 			visited[ child ] = 1;
 
-			// Add to teleport segments (skip size check — simplified from C)
-			if ( Num_boss_teleport_segs < MAX_BOSS_TELEPORT_SEGS ) {
+			// Teleport list must pass boss size check (gating list below does not).
+			// Ported from: init_boss_segments(..., size_check=1) in AI.C lines 709, 2333-2335
+			if ( Num_boss_teleport_segs < MAX_BOSS_TELEPORT_SEGS && boss_fits_in_seg( _bossRobot.obj, child ) === true ) {
 
 				Boss_teleport_segs[ Num_boss_teleport_segs ++ ] = child;
 
