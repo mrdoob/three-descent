@@ -92,6 +92,7 @@ let _pendingSaveRestore = null;	// save data set by loadGame, applied after leve
 let currentLevelNum = 1;
 let currentLevelName = '';
 const MAX_SHAREWARE_LEVELS = 7;
+const SECRET_LEVEL_TABLE = [ 10, 21, 24 ];	// from original Descent mission defaults
 let levelTransitioning = false;
 const ENDLEVEL_SEQUENCE_TIME = 2.5;
 let endlevelSequenceActive = false;
@@ -443,6 +444,49 @@ function respawnPlayer() {
 	// Ported from: create_player_appearance_effect() in GAMESEQ.C lines 752-778
 	const respawnPos = getPlayerPos();
 	object_create_explosion( respawnPos.x, respawnPos.y, respawnPos.z, 5.0, VCLIP_PLAYER_HIT );
+
+}
+
+function computeAdvanceLevelTarget( secretFlag ) {
+
+	// Ported from: AdvanceLevel(secret_flag) in GAMESEQ.C lines 1250-1269
+	let nextLevelNum = currentLevelNum + 1;
+
+	if ( secretFlag === true ) {
+
+		const secretIdx = SECRET_LEVEL_TABLE.indexOf( currentLevelNum );
+		if ( secretIdx !== - 1 ) {
+
+			nextLevelNum = - ( secretIdx + 1 );
+
+		} else {
+
+			console.warn( 'LEVEL EXIT: Secret exit trigger on level ' + currentLevelNum +
+				' has no mapping in SECRET_LEVEL_TABLE; advancing normally' );
+
+		}
+
+	}
+
+	// Returning from a secret level goes to source level + 1.
+	if ( currentLevelNum < 0 ) {
+
+		const idx = ( - currentLevelNum ) - 1;
+		if ( idx >= 0 && idx < SECRET_LEVEL_TABLE.length ) {
+
+			nextLevelNum = SECRET_LEVEL_TABLE[ idx ] + 1;
+
+		} else {
+
+			console.warn( 'LEVEL EXIT: Invalid secret level index ' + currentLevelNum +
+				'; falling back to level 1' );
+			nextLevelNum = 1;
+
+		}
+
+	}
+
+	return nextLevelNum;
 
 }
 
@@ -885,7 +929,16 @@ function showBonusScreen( isFinalLevel, onContinue ) {
 }
 
 // --- Clean up current level and load next ---
-async function advanceLevel() {
+async function advanceLevel( secretFlag ) {
+
+	if ( typeof secretFlag === 'boolean' ) {
+
+		const nextLevelNum = computeAdvanceLevelTarget( secretFlag );
+		console.log( 'ADVANCE LEVEL: ' + currentLevelNum + ' -> ' + nextLevelNum +
+			' (secret=' + ( secretFlag === true ) + ')' );
+		currentLevelNum = nextLevelNum;
+
+	}
 
 	const scene = getScene();
 
@@ -953,12 +1006,21 @@ async function advanceLevel() {
 
 	}
 
-	// Build level filename
-	const num = currentLevelNum < 10 ? '0' + currentLevelNum : '' + currentLevelNum;
+	// Build level filename.
+	// Secret levels are mission-defined and not yet parsed from .MSN in this port,
+	// so negative level numbers currently fall back to levelXX naming.
+	const levelAbsNum = Math.abs( currentLevelNum );
+	const num = levelAbsNum < 10 ? '0' + levelAbsNum : '' + levelAbsNum;
 	const levelName = 'level' + num + '.sdl';
+	if ( currentLevelNum < 0 ) {
+
+		console.warn( 'ADVANCE LEVEL: Secret level ' + currentLevelNum +
+			' file mapping not mission-driven yet, using fallback "' + levelName + '"' );
+
+	}
 
 	console.log( 'Loading level: ' + levelName );
-	songs_play_level_song( currentLevelNum );
+	songs_play_level_song( Math.abs( currentLevelNum ) );
 	loadLevel( levelName );
 
 }
