@@ -8,7 +8,7 @@ import { game_init, game_set_mine, game_loop, game_set_player_start, game_set_pl
 import { load_game_data, get_Gamesave_num_org_robots } from './gamesave.js';
 import { Polygon_models, buildModelMesh, buildAnimatedModelMesh, polyobj_set_glow, compute_engine_glow, polyobj_rebuild_glow_refs } from './polyobj.js';
 import { OBJ_PLAYER, OBJ_ROBOT, OBJ_CNTRLCEN, OBJ_HOSTAGE, OBJ_POWERUP, RT_POLYOBJ, RT_POWERUP, RT_HOSTAGE,
-	init_objects, obj_set_segments } from './object.js';
+	init_objects, obj_set_segments, OF_SHOULD_BE_DEAD } from './object.js';
 import { wall_set_externals, wall_set_render_callback, wall_set_player_callbacks, wall_set_illusion_callback, wall_set_explosion_callback, wall_set_explode_wall_callback, wall_init_door_textures, wall_reset, wall_toggle } from './wall.js';
 import { collide_set_externals, apply_damage_to_player, collide_robot_and_weapon, collide_weapon_and_wall, collide_badass_explosion, collide_player_and_powerup, collide_player_and_nasty_robot, collide_robot_and_player, drop_player_eggs, scrape_object_on_wall } from './collide.js';
 import { init_special_effects, effects_set_externals, effects_set_render_callback, reset_special_effects } from './effects.js';
@@ -28,7 +28,8 @@ import { do_main_menu } from './menu.js';
 import { pcx_read, pcx_to_canvas } from './pcx.js';
 import { gr_string, gr_get_string_size } from './font.js';
 import { SUBTITLE_FONT, GAME_FONT } from './gamefont.js';
-import { Segments, Vertices, Num_segments, Highest_segment_index, Side_to_verts, Walls, FrameTime, GameTime, Automap_visited, Textures } from './mglobal.js';
+import { Segments, Vertices, Num_segments, Highest_segment_index, Side_to_verts, Walls, FrameTime, GameTime, Automap_visited, Textures, Objects } from './mglobal.js';
+import { get_seg_masks } from './gameseg.js';
 // automap is now self-contained — see automap.js
 import { fuelcen_init, fuelcen_reset, fuelcen_set_externals, fuelcen_frame_process, SEGMENT_IS_FUELCEN } from './fuelcen.js';
 import { cntrlcen_set_externals, cntrlcen_set_reactor, init_controlcen_for_level, startSelfDestruct,
@@ -974,107 +975,56 @@ export function loadLevel( levelName ) {
 
 }
 
-// Check if any objects (player or robots) are blocking a door side
 // Ported from: check_poke() in WALL.C lines 641-652
-// Simplified: instead of get_seg_masks(), check if object center is close to the door plane
-// and within the doorway area. Returns true if any object is blocking.
-// Pre-allocated scratch vectors (Golden Rule #5)
-const _doorNormal = { x: 0, y: 0, z: 0 };
-const _doorCenter = { x: 0, y: 0, z: 0 };
+function check_poke( objnum, segnum, side ) {
 
+	const obj = Objects[ objnum ];
+	if ( obj === undefined ) return false;
+	if ( obj.size <= 0 ) return false; // note: don't let objects with zero size block door
+
+	const masks = get_seg_masks( obj.pos_x, obj.pos_y, obj.pos_z, segnum, obj.size );
+	return ( masks.sidemask & ( 1 << side ) ) !== 0;
+
+}
+
+function any_object_pokes_side( segnum, side ) {
+
+	if ( segnum < 0 || segnum >= Num_segments ) return false;
+
+	let objnum = Segments[ segnum ].objects;
+	let guard = 0;
+
+	while ( objnum !== - 1 ) {
+
+		if ( objnum < 0 || objnum >= Objects.length ) break;
+
+		const obj = Objects[ objnum ];
+		const nextObj = obj.next;
+
+		if ( ( obj.flags & OF_SHOULD_BE_DEAD ) === 0 && check_poke( objnum, segnum, side ) === true ) {
+
+			return true;
+
+		}
+
+		objnum = nextObj;
+		guard ++;
+
+		// Broken object list guard
+		if ( guard > Objects.length ) break;
+
+	}
+
+	return false;
+
+}
+
+// Check if any objects are blocking a door side
+// Ported from: do_door_close() + check_poke() in WALL.C lines 670-694, 641-652
 function checkObjectsInDoorway( segnum, sidenum, csegnum, csidenum ) {
 
-	// Compute door side center and normal
-	const seg = Segments[ segnum ];
-	const sv = Side_to_verts[ sidenum ];
-	let cx = 0, cy = 0, cz = 0;
-
-	for ( let v = 0; v < 4; v ++ ) {
-
-		const vi = seg.verts[ sv[ v ] ];
-		cx += Vertices[ vi * 3 + 0 ];
-		cy += Vertices[ vi * 3 + 1 ];
-		cz += Vertices[ vi * 3 + 2 ];
-
-	}
-
-	_doorCenter.x = cx / 4;
-	_doorCenter.y = cy / 4;
-	_doorCenter.z = cz / 4;
-
-	// Compute face normal from two edges (v0->v1 cross v0->v3)
-	const vi0 = seg.verts[ sv[ 0 ] ];
-	const vi1 = seg.verts[ sv[ 1 ] ];
-	const vi3 = seg.verts[ sv[ 3 ] ];
-
-	const e1x = Vertices[ vi1 * 3 + 0 ] - Vertices[ vi0 * 3 + 0 ];
-	const e1y = Vertices[ vi1 * 3 + 1 ] - Vertices[ vi0 * 3 + 1 ];
-	const e1z = Vertices[ vi1 * 3 + 2 ] - Vertices[ vi0 * 3 + 2 ];
-	const e2x = Vertices[ vi3 * 3 + 0 ] - Vertices[ vi0 * 3 + 0 ];
-	const e2y = Vertices[ vi3 * 3 + 1 ] - Vertices[ vi0 * 3 + 1 ];
-	const e2z = Vertices[ vi3 * 3 + 2 ] - Vertices[ vi0 * 3 + 2 ];
-
-	let nx = e1y * e2z - e1z * e2y;
-	let ny = e1z * e2x - e1x * e2z;
-	let nz = e1x * e2y - e1y * e2x;
-	const nmag = Math.sqrt( nx * nx + ny * ny + nz * nz );
-
-	if ( nmag < 0.0001 ) return false;
-
-	nx /= nmag;
-	ny /= nmag;
-	nz /= nmag;
-
-	_doorNormal.x = nx;
-	_doorNormal.y = ny;
-	_doorNormal.z = nz;
-
-	// Check player position against the door plane
-	const pp = getPlayerPos();
-	if ( pp !== null ) {
-
-		const playerSeg = getPlayerSegnum();
-		if ( playerSeg === segnum || playerSeg === csegnum ) {
-
-			const pdx = pp.x - _doorCenter.x;
-			const pdy = pp.y - _doorCenter.y;
-			const pdz = pp.z - _doorCenter.z;
-			const playerDist = Math.abs( pdx * nx + pdy * ny + pdz * nz );
-			const PLAYER_RADIUS = 3.2;	// approximate player collision radius
-
-			if ( playerDist < PLAYER_RADIUS ) {
-
-				return true;	// player is blocking the door
-
-			}
-
-		}
-
-	}
-
-	// Check robots in both segments adjacent to the door
-	for ( let r = 0; r < liveRobots.length; r ++ ) {
-
-		const robot = liveRobots[ r ];
-		if ( robot.alive !== true ) continue;
-
-		const robotSeg = robot.obj.segnum;
-		if ( robotSeg !== segnum && robotSeg !== csegnum ) continue;
-
-		const rdx = robot.obj.pos_x - _doorCenter.x;
-		const rdy = robot.obj.pos_y - _doorCenter.y;
-		const rdz = robot.obj.pos_z - _doorCenter.z;
-		const robotDist = Math.abs( rdx * nx + rdy * ny + rdz * nz );
-		const robotRadius = robot.obj.size > 0 ? robot.obj.size : 4.84;
-
-		if ( robotDist < robotRadius ) {
-
-			return true;	// robot is blocking the door
-
-		}
-
-	}
-
+	if ( any_object_pokes_side( segnum, sidenum ) === true ) return true;
+	if ( any_object_pokes_side( csegnum, csidenum ) === true ) return true;
 	return false;
 
 }
