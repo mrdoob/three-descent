@@ -63,6 +63,10 @@ const BRIEFING_VIS_H = 138;
 const BRIEFING_PALETTE = new Uint8Array( 256 * 3 );
 const BRIEFING_FG_INDEX = [ 250, 251 ];
 const BRIEFING_BG_INDEX = [ 252, 253 ];
+const BRIEFING_SKIP_DIM_FG_INDEX = 244;
+const BRIEFING_SKIP_DIM_BG_INDEX = 245;
+const BRIEFING_SKIP_BRIGHT_FG_INDEX = 246;
+const BRIEFING_SKIP_BRIGHT_BG_INDEX = 247;
 
 function set_palette_rgb63( palette, index, r63, g63, b63 ) {
 
@@ -78,6 +82,10 @@ set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_FG_INDEX[ 0 ], 0, 54, 0 );
 set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_BG_INDEX[ 0 ], 0, 19, 0 );
 set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_FG_INDEX[ 1 ], 42, 38, 32 );
 set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_BG_INDEX[ 1 ], 14, 14, 14 );
+set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_SKIP_DIM_FG_INDEX, 40, 40, 40 );
+set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_SKIP_DIM_BG_INDEX, 8, 8, 8 );
+set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_SKIP_BRIGHT_FG_INDEX, 63, 63, 63 );
+set_palette_rgb63( BRIEFING_PALETTE, BRIEFING_SKIP_BRIGHT_BG_INDEX, 16, 16, 16 );
 
 // Cached briefing text (decrypted once)
 let _briefingText = null;
@@ -161,6 +169,34 @@ function draw_briefing_char( textCtx, imageData, ch, x, y, colorIndex ) {
 	gr_string( imageData, font, x, y, ch, BRIEFING_PALETTE, BRIEFING_BG_INDEX[ color ] );
 	gr_string( imageData, font, x + 1, y, ch, BRIEFING_PALETTE, BRIEFING_FG_INDEX[ color ] );
 	textCtx.putImageData( imageData, 0, 0 );
+
+}
+
+function create_briefing_label_canvas( text, fgIndex, bgIndex ) {
+
+	const font = get_briefing_font();
+	if ( font === null ) return null;
+
+	const size = gr_get_string_size( font, text );
+	const width = Math.max( size.width + 1, 1 );
+	const height = Math.max( font.ft_h + 1, 1 );
+
+	const canvas = document.createElement( 'canvas' );
+	canvas.width = width;
+	canvas.height = height;
+	canvas.style.imageRendering = 'pixelated';
+	canvas.style.pointerEvents = 'none';
+
+	const ctx = canvas.getContext( '2d', { willReadFrequently: true } );
+	if ( ctx === null ) return null;
+
+	const imageData = ctx.createImageData( width, height );
+	clear_image_data( imageData );
+	gr_string( imageData, font, 0, 0, text, BRIEFING_PALETTE, bgIndex );
+	gr_string( imageData, font, 1, 0, text, BRIEFING_PALETTE, fgIndex );
+	ctx.putImageData( imageData, 0, 0 );
+
+	return canvas;
 
 }
 
@@ -785,21 +821,63 @@ function addSkipBriefingButton() {
 	if ( _skipBriefingBtn !== null ) return;
 
 	const btn = document.createElement( 'button' );
-	btn.textContent = 'Skip';
 	btn.style.cssText = 'position:absolute;bottom:20px;right:20px;z-index:202;' +
-		'background:transparent;color:rgba(255,255,255,0.5);border:none;outline:none;' +
-		'padding:8px 16px;font-family:"Courier New",monospace;font-size:14px;cursor:pointer;' +
-		'transition:color 0.2s;';
-	btn.addEventListener( 'mouseenter', () => {
+		'background:transparent;border:none;outline:none;padding:8px 16px;cursor:pointer;';
 
-		btn.style.color = 'rgba(255,255,255,0.9)';
+	const dimLabel = create_briefing_label_canvas( 'Skip', BRIEFING_SKIP_DIM_FG_INDEX, BRIEFING_SKIP_DIM_BG_INDEX );
+	const brightLabel = create_briefing_label_canvas( 'Skip', BRIEFING_SKIP_BRIGHT_FG_INDEX, BRIEFING_SKIP_BRIGHT_BG_INDEX );
 
-	} );
-	btn.addEventListener( 'mouseleave', () => {
+	if ( dimLabel !== null && brightLabel !== null ) {
 
-		btn.style.color = 'rgba(255,255,255,0.5)';
+		const scale = 2;
+		const width = dimLabel.width * scale;
+		const height = dimLabel.height * scale;
 
-	} );
+		btn.style.width = width + 'px';
+		btn.style.height = height + 'px';
+		btn.style.padding = '0';
+
+		dimLabel.style.width = width + 'px';
+		dimLabel.style.height = height + 'px';
+		brightLabel.style.width = width + 'px';
+		brightLabel.style.height = height + 'px';
+		brightLabel.style.display = 'none';
+
+		btn.appendChild( dimLabel );
+		btn.appendChild( brightLabel );
+
+		btn.addEventListener( 'mouseenter', () => {
+
+			dimLabel.style.display = 'none';
+			brightLabel.style.display = 'block';
+
+		} );
+		btn.addEventListener( 'mouseleave', () => {
+
+			dimLabel.style.display = 'block';
+			brightLabel.style.display = 'none';
+
+		} );
+
+	} else {
+
+		btn.textContent = 'Skip';
+		btn.style.color = 'rgba(255,255,255,0.6)';
+		btn.style.fontFamily = '"Courier New", monospace';
+		btn.style.fontSize = '14px';
+
+		btn.addEventListener( 'mouseenter', () => {
+
+			btn.style.color = 'rgba(255,255,255,0.95)';
+
+		} );
+		btn.addEventListener( 'mouseleave', () => {
+
+			btn.style.color = 'rgba(255,255,255,0.6)';
+
+		} );
+
+	}
 	btn.addEventListener( 'click', ( e ) => {
 
 		e.stopPropagation();
