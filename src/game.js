@@ -837,32 +837,15 @@ function processWeapons() {
 	const spawnSeg = find_point_seg( gp0.x, gp0.y, gp0.z, playerSegnum );
 	if ( spawnSeg === - 1 ) return;
 
-	// Vulcan spread: apply random spread to fire direction
-	// Ported from: LASER.C line 1146 — rand()/8 - 32767/16 in fixed-point
-	// Converts to ±0.031 in float (spread along right and up vectors)
-	let fire_x = _fireDir.x;
-	let fire_y = _fireDir.y;
-	let fire_z = _fireDir.z;
-
-	if ( Primary_weapon === 1 ) {
-
-		// Use _right and _up in Descent coordinates (negate Z from Three.js)
-		const spreadR = ( Math.random() - 0.5 ) * 0.063;
-		const spreadU = ( Math.random() - 0.5 ) * 0.063;
-		fire_x += _right.x * spreadR + _up.x * spreadU;
-		fire_y += _right.y * spreadR + _up.y * spreadU;
-		fire_z += ( - _right.z ) * spreadR + ( - _up.z ) * spreadU;
-
-	}
-
 	// Quad laser check
 	// Ported from: LASER.C do_laser_firing() — PLAYER_FLAGS_QUAD_LASERS fires 4 bolts with 0.75x damage
 	const hasQuad = ( isLaser && _getPlayerQuadLasers !== null && _getPlayerQuadLasers() === true );
 	const quadMultiplier = hasQuad ? 0.75 : 1.0;
+	const laserOffset = 2.0 * ( Math.floor( Math.random() * 10 ) / 10.0 );	// LASER.C Laser_offset
 
 	// Fire through laser.js (handles fire rate, weapon type, energy/ammo)
 	// Parallel fire direction along player's forward vector (original Descent behavior)
-	const fired = Laser_player_fire( fire_x, fire_y, fire_z, gp0.x, gp0.y, gp0.z, spawnSeg, GameTime, quadMultiplier );
+	const fired = Laser_player_fire( _fireDir.x, _fireDir.y, _fireDir.z, gp0.x, gp0.y, gp0.z, spawnSeg, GameTime, quadMultiplier, laserOffset );
 	if ( fired === true ) {
 
 		// Per-weapon fire sound from Weapon_info[].flash_sound
@@ -881,7 +864,7 @@ function processWeapons() {
 			if ( seg1 !== - 1 ) {
 
 				// Use laser-level-aware weapon_info_index
-				Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp1.x, gp1.y, gp1.z, seg1, PARENT_PLAYER, laserWiIndex, quadMultiplier );
+				Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp1.x, gp1.y, gp1.z, seg1, PARENT_PLAYER, laserWiIndex, quadMultiplier, laserOffset );
 
 			}
 
@@ -893,7 +876,7 @@ function processWeapons() {
 				const seg2 = find_point_seg( gp2.x, gp2.y, gp2.z, playerSegnum );
 				if ( seg2 !== - 1 ) {
 
-					Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp2.x, gp2.y, gp2.z, seg2, PARENT_PLAYER, laserWiIndex, quadMultiplier );
+					Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp2.x, gp2.y, gp2.z, seg2, PARENT_PLAYER, laserWiIndex, quadMultiplier, laserOffset );
 
 				}
 
@@ -901,7 +884,7 @@ function processWeapons() {
 				const seg3 = find_point_seg( gp3.x, gp3.y, gp3.z, playerSegnum );
 				if ( seg3 !== - 1 ) {
 
-					Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp3.x, gp3.y, gp3.z, seg3, PARENT_PLAYER, laserWiIndex, quadMultiplier );
+					Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp3.x, gp3.y, gp3.z, seg3, PARENT_PLAYER, laserWiIndex, quadMultiplier, laserOffset );
 
 				}
 
@@ -1047,15 +1030,18 @@ function fireFusionShot() {
 
 	}
 
+	// Ported from: LASER.C do_laser_firing() — dual fusion bolts share one Laser_offset.
+	const laserOffset = 2.0 * ( Math.floor( Math.random() * 10 ) / 10.0 );
+
 	// First bolt (parallel fire direction)
-	Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp0.x, gp0.y, gp0.z, seg0, PARENT_PLAYER, weapon_info_index, multiplier );
+	Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp0.x, gp0.y, gp0.z, seg0, PARENT_PLAYER, weapon_info_index, multiplier, laserOffset );
 
 	// Second bolt from gun 1
 	const gp1 = getGunWorldPos( 1 );
 	const seg1 = find_point_seg( gp1.x, gp1.y, gp1.z, playerSegnum );
 	if ( seg1 !== - 1 ) {
 
-		Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp1.x, gp1.y, gp1.z, seg1, PARENT_PLAYER, weapon_info_index, multiplier );
+		Laser_create_new( _fireDir.x, _fireDir.y, _fireDir.z, gp1.x, gp1.y, gp1.z, seg1, PARENT_PLAYER, weapon_info_index, multiplier, laserOffset );
 
 	}
 

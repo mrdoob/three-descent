@@ -151,7 +151,6 @@ let _isPlayerCloaked = null;
 // Pre-allocated working vectors (Golden Rule #5)
 const _dirVec = new THREE.Vector3();
 const _orientMatrix = new THREE.Matrix4();
-const _tempBox = new THREE.Box3();
 
 // Pre-allocated result for ray-sphere intersection
 const _sphereIntResult = { dist: 0, hit_x: 0, hit_y: 0, hit_z: 0 };
@@ -244,9 +243,13 @@ function check_vector_to_sphere( p0_x, p0_y, p0_z, p1_x, p1_y, p1_z, sp_x, sp_y,
 // Cached weapon model meshes (weapon_type → THREE.Group template)
 const _weaponModelCache = new Map();
 
-// Cached weapon half-lengths from bounding box (weapon_type → float)
-// Avoids expensive traverse+computeBoundingBox on every fire
-const _weaponHalfLengthCache = new Map();
+function get_random_laser_offset() {
+
+	// Ported from: LASER.C line 1127
+	// Laser_offset = ((F1_0*2)*(rand()%10))/10 -> 0.0,0.2,...,1.8
+	return 2.0 * ( Math.floor( Math.random() * 10 ) / 10.0 );
+
+}
 
 // Build a DataTexture from a PIG bitmap index (cached)
 // Ported from draw_object_blob() which calls g3_draw_bitmap()
@@ -322,11 +325,6 @@ function buildWeaponModelMesh( weapon_type ) {
 
 	const group = buildModelMesh( model, _pigFile, _palette );
 	if ( group === null ) return null;
-
-	// Scale up weapon model for visibility at modern resolutions.
-	// Original Descent rendered at 320x200 — at HD resolution the 0.36-unit-wide
-	// bolt models are too thin to see. Scale 3x to compensate.
-	group.scale.set( 3, 3, 3 );
 
 	// Outer model: render opaque with original POF model colors
 	// Ported from original Descent which rendered weapon polymodels as opaque flat-shaded polys.
@@ -968,7 +966,7 @@ function handleWeaponExplosion( w ) {
 // Create a new weapon bolt
 // weapon_type: index into Weapon_info[] array
 // damage_multiplier: optional multiplier for damage (fusion charge)
-export function Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, parent_type, weapon_type, damage_multiplier ) {
+export function Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, parent_type, weapon_type, damage_multiplier, laser_offset_override ) {
 
 	if ( _scene === null ) return - 1;
 
@@ -1078,39 +1076,31 @@ export function Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segn
 		// offset = Laser_offset (random jitter) + laser_length / 2
 		if ( w.modelMesh !== null ) {
 
-			// Get laser model half-length (cached per weapon type to avoid expensive recomputation)
-			let laserHalfLength = 1.77;	// Default (laser bolt model half-length)
+			// Ported from LASER.C lines 286 and 360:
+			// laser_length = Polygon_models[model_num].rad * 2, then add laser_length/2.
+			let laserHalfLength = 0;
+			if ( weapon_type < N_weapon_types ) {
 
-			if ( _weaponHalfLengthCache.has( weapon_type ) ) {
+				const wi = Weapon_info[ weapon_type ];
+				if ( wi !== undefined && wi.model_num >= 0 && wi.model_num < Polygon_models.length ) {
 
-				laserHalfLength = _weaponHalfLengthCache.get( weapon_type );
+					const model = Polygon_models[ wi.model_num ];
+					if ( model !== null && model !== undefined && model.rad > 0 ) {
 
-			} else {
-
-				w.modelMesh.traverse( ( child ) => {
-
-					if ( child.isMesh === true && child.geometry !== undefined ) {
-
-						child.geometry.computeBoundingBox();
-						const bb = child.geometry.boundingBox;
-						if ( bb !== null ) {
-
-							const halfZ = ( bb.max.z - bb.min.z ) / 2;
-							if ( halfZ > laserHalfLength ) laserHalfLength = halfZ;
-
-						}
+						laserHalfLength = model.rad;
 
 					}
 
-				} );
-
-				_weaponHalfLengthCache.set( weapon_type, laserHalfLength );
+				}
 
 			}
 
-			// Laser_offset: random jitter 0..2.0 so dual bolts don't alias
-			// Ported from LASER.C line 1124: Laser_offset = ((F1_0*2)*(rand()%10))/10
-			const laserOffset = 2.0 * ( Math.random() * 0.9 + 0.05 );
+			let laserOffset = laser_offset_override;
+			if ( laserOffset === undefined ) {
+
+				laserOffset = get_random_laser_offset();
+
+			}
 
 			const totalOffset = laserHalfLength + laserOffset;
 
@@ -1155,7 +1145,7 @@ export function Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segn
 
 // Fire player primary weapon
 // Returns true if weapon was fired
-export function Laser_player_fire( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, gameTime, damage_multiplier ) {
+export function Laser_player_fire( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, gameTime, damage_multiplier, laser_offset_override ) {
 
 	_gameTime = gameTime;
 
@@ -1247,7 +1237,7 @@ export function Laser_player_fire( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, seg
 	if ( Primary_weapon === 2 ) {
 
 		// Center bolt
-		const centerIdx = Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index );
+		const centerIdx = Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index, 1.0, laser_offset_override );
 
 		// Notify AI of danger laser for robot evasion
 		// Ported from: Player_fired_laser_this_frame in LASER.C line 822
@@ -1315,13 +1305,13 @@ export function Laser_player_fire( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, seg
 		// Right/up spread bolt
 		Laser_create_new(
 			dir_x + sx * spread, dir_y + sy * spread, dir_z + sz * spread,
-			pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index
+			pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index, 1.0, laser_offset_override
 		);
 
 		// Left/down spread bolt
 		Laser_create_new(
 			dir_x - sx * spread, dir_y - sy * spread, dir_z - sz * spread,
-			pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index
+			pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index, 1.0, laser_offset_override
 		);
 
 		return true;
@@ -1344,7 +1334,7 @@ export function Laser_player_fire( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, seg
 	}
 
 	// Normal single bolt
-	const boltIdx = Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index, damage_multiplier );
+	const boltIdx = Laser_create_new( dir_x, dir_y, dir_z, pos_x, pos_y, pos_z, segnum, PARENT_PLAYER, weapon_info_index, damage_multiplier, laser_offset_override );
 
 	// Notify AI of danger laser for robot evasion
 	// Ported from: Player_fired_laser_this_frame in LASER.C line 822
