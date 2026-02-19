@@ -807,6 +807,10 @@ function fvi_sub( p0_x, p0_y, p0_z, startseg, p1_x, p1_y, p1_z, rad, thisobjnum,
 			// Skip self
 			if ( thisobjnum === objnum ) { objnum = nextObj; continue; }
 
+			// Player movement queries pass thisobjnum = -1; ignore the player object
+			// so enabling FQ_CHECK_OBJS doesn't immediately block all movement.
+			if ( thisobjnum === - 1 && obj.type === OBJ_PLAYER ) { objnum = nextObj; continue; }
+
 			// Skip ignored objects
 			if ( _fvi_ignore_obj_list !== null ) {
 
